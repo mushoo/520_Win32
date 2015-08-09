@@ -106,7 +106,7 @@ HRESULT _520::InitWindow(HINSTANCE hInstance, int nCmdShow)
 
 	// Create window
 	g_hInst = hInstance;
-	RECT rc = { 0, 0, 800, 600 };
+	RECT rc = { 0, 0, 1024, 768 };
 	AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
 	g_hWnd = CreateWindow(L"520_WindowClass", L"520 Win32",
 		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
@@ -140,13 +140,15 @@ bool _520::Render()
 	auto viewport = g_deviceResources->GetScreenViewport();
 	context->RSSetViewports(1, &viewport);
 
-	// Reset render targets to the screen.
-	ID3D11RenderTargetView *const targets[1] = { g_deviceResources->GetBackBufferRenderTargetView() };
-	context->OMSetRenderTargets(1, targets, g_deviceResources->GetDepthStencilView());
-
-	// Clear the back buffer and depth stencil view.
+	// Moved clearing to inside the Render function.
+	/*// Clear the back buffer and depth stencil view.
 	context->ClearRenderTargetView(g_deviceResources->GetBackBufferRenderTargetView(), DirectX::Colors::CornflowerBlue);
 	context->ClearDepthStencilView(g_deviceResources->GetDepthStencilView(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+	for (ID3D11RenderTargetView *view : g_deviceResources->m_d3dGBufferTargetViews)
+	{
+		if (view != nullptr)
+			context->ClearRenderTargetView(view, DirectX::Colors::CornflowerBlue);
+	}*/
 
 	// Render the scene objects.
 	g_renderer->Render();

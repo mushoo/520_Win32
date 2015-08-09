@@ -193,6 +193,18 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
 	m_d2dContext->SetTarget(nullptr);
 	m_d2dTargetBitmap = nullptr;
 	m_d3dDepthStencilView = nullptr;
+	for (ID3D11RenderTargetView *view : m_d3dGBufferTargetViews)
+	{
+		if (view != nullptr)
+			view->Release();
+	}
+	m_d3dGBufferTargetViews.clear();
+	for (ID3D11ShaderResourceView *view : m_d3dGBufferResourceViews)
+	{
+		if (view != nullptr)
+			view->Release();
+	}
+	m_d3dGBufferResourceViews.clear();
 	m_d3dContext->Flush();
 
 	UINT width = m_windowSize.right - m_windowSize.left;
@@ -273,6 +285,48 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
 		DX::ThrowIfFailed(
 			dxgiDevice->SetMaximumFrameLatency(1)
 			);
+	}
+
+	// Create Geometry Buffers/Targets
+	m_d3dGBufferTargetViews.resize(GBUFFNUM);
+	m_d3dGBufferResourceViews.resize(GBUFFNUM);
+
+	D3D11_TEXTURE2D_DESC textureDesc;
+	ZeroMemory(&textureDesc, sizeof(textureDesc));
+	textureDesc.Width = lround(width);
+	textureDesc.Height = lround(height);
+	textureDesc.MipLevels = 1;
+	textureDesc.ArraySize = 1;
+	textureDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	textureDesc.SampleDesc.Count = 1;
+	textureDesc.Usage = D3D11_USAGE_DEFAULT;
+	textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+	textureDesc.CPUAccessFlags = 0;
+	textureDesc.MiscFlags = 0;
+
+	D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
+	renderTargetViewDesc.Format = textureDesc.Format;
+	renderTargetViewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+	renderTargetViewDesc.Texture2D.MipSlice = 0;
+
+	D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
+	shaderResourceViewDesc.Format = textureDesc.Format;
+	shaderResourceViewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+	shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
+	shaderResourceViewDesc.Texture2D.MipLevels = 1;
+
+	for (int i = 0; i < GBUFFNUM; i++)
+	{
+		ID3D11Texture2D *texture;
+		ThrowIfFailed(
+			m_d3dDevice->CreateTexture2D(&textureDesc, NULL, &texture)
+		);
+		ThrowIfFailed(
+			m_d3dDevice->CreateRenderTargetView(texture, &renderTargetViewDesc, &m_d3dGBufferTargetViews[i])
+		);
+		ThrowIfFailed(
+			m_d3dDevice->CreateShaderResourceView(texture, &shaderResourceViewDesc, &m_d3dGBufferResourceViews[i])
+		);
 	}
 
 	// Create a render target view of the swap chain back buffer.

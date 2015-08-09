@@ -21,9 +21,6 @@
     <ClCompile Include="DeviceResources.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Content\SampleFpsTextRenderer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Content\SimpleMesh.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -45,9 +42,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Content\Camera.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Content\SampleFpsTextRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Content\ShaderStructures.h">
@@ -82,8 +76,10 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Content\SimpleColourPS.hlsl" />
-    <FxCompile Include="Content\VertexShader.hlsl" />
+    <FxCompile Include="Content\DeferredVS.hlsl" />
+    <FxCompile Include="Content\DeferredPS.hlsl" />
+    <FxCompile Include="Content\FinalPS.hlsl" />
+    <FxCompile Include="Content\FinalVS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Content\DirectXTex\DirectXTex.inl">

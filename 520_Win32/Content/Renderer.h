@@ -35,6 +35,7 @@ namespace _520
 		void ReleaseDeviceDependentResources();
 		void Update(DX::StepTimer const& timer);
 		void Render();
+		void RenderGBuffers();
 		std::shared_ptr<Camera> GetCamera() { return m_camera; }
 
 	private:
@@ -43,13 +44,16 @@ namespace _520
 		std::shared_ptr<Camera> m_camera = nullptr;
 
 		// D3D resources.
-		Microsoft::WRL::ComPtr<ID3D11InputLayout>	m_inputLayout;
 		Microsoft::WRL::ComPtr<ID3D11Buffer>		m_vertexBuffer;
 		Microsoft::WRL::ComPtr<ID3D11Buffer>		m_indexBuffer;
-		Microsoft::WRL::ComPtr<ID3D11VertexShader>	m_vertexShader;
-		Microsoft::WRL::ComPtr<ID3D11PixelShader>	m_pixelShader;
-		Microsoft::WRL::ComPtr<ID3D11SamplerState>	m_sampler;
+		Microsoft::WRL::ComPtr<ID3D11VertexShader>	m_finalVS;
+		Microsoft::WRL::ComPtr<ID3D11PixelShader>	m_finalPS;
+		Microsoft::WRL::ComPtr<ID3D11SamplerState>	m_linearSampler;
+		Microsoft::WRL::ComPtr<ID3D11SamplerState>	m_pointSampler;
 		std::vector<std::shared_ptr<_520::Material>>		m_materials;
+		Microsoft::WRL::ComPtr<ID3D11VertexShader>	m_deferredVS;
+		Microsoft::WRL::ComPtr<ID3D11PixelShader>	m_deferredPS;
+		Microsoft::WRL::ComPtr<ID3D11InputLayout>	m_inputLayout;
 
 		ModelViewProjectionConstantBuffer	m_constantBufferData;
 		Microsoft::WRL::ComPtr<ID3D11Buffer>		m_constantBuffer;

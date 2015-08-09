@@ -33,6 +33,10 @@ namespace DX
 		IDWriteFactory2*		GetDWriteFactory() const				{ return m_dwriteFactory.Get();	 }
 		IWICImagingFactory2*	GetWicImagingFactory() const			{ return m_wicFactory.Get(); }
 
+		const int GBUFFNUM = 3;
+		std::vector<ID3D11RenderTargetView*>			m_d3dGBufferTargetViews;
+		std::vector<ID3D11ShaderResourceView*>			m_d3dGBufferResourceViews;
+
 	private:
 		void CreateDeviceIndependentResources();
 		void CreateDeviceResources();

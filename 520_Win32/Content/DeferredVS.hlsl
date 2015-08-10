@@ -21,6 +21,7 @@ struct PixelShaderInput
 	float2 texcoord : TEXCOORD0;
 	float3 norm : NORMAL;
 	float3 worldPos : TEXCOORD1;
+	float depth : TEXCOORD2;
 };
 
 // Simple shader to do vertex processing on the GPU.
@@ -33,6 +34,7 @@ PixelShaderInput main(VertexShaderInput input)
 	pos = mul(pos, model);
 	output.worldPos = pos;
 	pos = mul(pos, view);
+	output.depth = pos.z;
 	pos = mul(pos, projection);
 	output.pos = pos;
 

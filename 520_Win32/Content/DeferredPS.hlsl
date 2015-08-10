@@ -8,6 +8,7 @@ struct PixelShaderInput
 	float2 texcoord : TEXCOORD0;
 	float3 norm : NORMAL;
 	float3 worldPos : TEXCOORD1;
+	float depth : TEXCOORD2;
 };
 
 struct PSoutput
@@ -21,7 +22,7 @@ PSoutput main(PixelShaderInput input) : SV_TARGET
 {
 	PSoutput output;
 	output.color = difTexture.Sample(difSampler, input.texcoord);
-	output.position = float4(input.worldPos, 1.0f);
+	output.position = float4(input.worldPos, input.depth);
 	output.normal = float4(input.norm, 1.0f);
 	return output;
 }

@@ -180,12 +180,11 @@ void Renderer::Render()
 	// Now we draw the full-screen quad.
 	auto context = m_deviceResources->GetD3DDeviceContext();
 
+	context->ClearRenderTargetView(m_deviceResources->GetBackBufferRenderTargetView(), DirectX::Colors::CornflowerBlue);
+	context->ClearDepthStencilView(m_deviceResources->GetDepthStencilView(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 	// Reset render targets to the screen.
 	ID3D11RenderTargetView *const targets[1] = { m_deviceResources->GetBackBufferRenderTargetView() };
 	context->OMSetRenderTargets(1, targets, m_deviceResources->GetDepthStencilView());
-
-	context->ClearRenderTargetView(m_deviceResources->GetBackBufferRenderTargetView(), DirectX::Colors::CornflowerBlue);
-	context->ClearDepthStencilView(m_deviceResources->GetDepthStencilView(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
 	// Attach our vertex shader.
 	context->VSSetShader(
@@ -230,19 +229,15 @@ void Renderer::Render()
 	context->IASetInputLayout(nullptr);
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	context->Draw(3, 0);
+
+	// Unset everything we used that's not going to be unset by the next draw.
+	std::vector<ID3D11ShaderResourceView *> nullBuffer(m_deviceResources->GBUFFNUM, 0);
+	context->PSSetShaderResources(0, m_deviceResources->GBUFFNUM, &nullBuffer[0]);
 }
 
 void Renderer::RenderGBuffers()
 {
-	HRESULT hr = m_deviceResources->GetD3DDevice()->GetDeviceRemovedReason();
 	auto context = m_deviceResources->GetD3DDeviceContext();
-	// Set render targets.
-	context->OMSetRenderTargets(
-		m_deviceResources->GBUFFNUM,
-		&m_deviceResources->m_d3dGBufferTargetViews[0],
-		m_deviceResources->GetDepthStencilView()
-		);
-	HRESULT hr2 = m_deviceResources->GetD3DDevice()->GetDeviceRemovedReason();
 
 	context->ClearDepthStencilView(m_deviceResources->GetDepthStencilView(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 	for (ID3D11RenderTargetView *view : m_deviceResources->m_d3dGBufferTargetViews)
@@ -250,6 +245,13 @@ void Renderer::RenderGBuffers()
 		if (view != nullptr)
 			context->ClearRenderTargetView(view, DirectX::Colors::CornflowerBlue);
 	}
+
+	// Set render targets.
+	context->OMSetRenderTargets(
+		m_deviceResources->GBUFFNUM,
+		&m_deviceResources->m_d3dGBufferTargetViews[0],
+		m_deviceResources->GetDepthStencilView()
+		);
 
 	// Attach our vertex shader.
 	context->VSSetShader(
@@ -321,6 +323,22 @@ void Renderer::RenderGBuffers()
 				);
 		}
 	}
+
+	// Unset everything we used that's not going to be unset by the next draw.
+	std::vector<ID3D11RenderTargetView *> nullRenderTargets(m_deviceResources->GBUFFNUM, 0);
+	ID3D11DepthStencilView *nullDepthView = 0;
+	context->OMSetRenderTargets(
+		m_deviceResources->GBUFFNUM,
+		&nullRenderTargets[0],
+		nullDepthView
+		);
+
+	ID3D11Buffer *nullBuffer[1] = { 0 };
+	context->VSSetConstantBuffers(
+		0,
+		1,
+		nullBuffer
+		);
 }
 
 void Renderer::CreateDeviceDependentResources()

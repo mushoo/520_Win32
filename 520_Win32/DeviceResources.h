@@ -36,7 +36,8 @@ namespace DX
 		const int GBUFFNUM = 3;
 		std::vector<ID3D11RenderTargetView*>			m_d3dGBufferTargetViews;
 		std::vector<ID3D11ShaderResourceView*>			m_d3dGBufferResourceViews;
-
+		ID3D11UnorderedAccessView*						m_clusterListUAV;
+		ID3D11ShaderResourceView*						m_clusterListResourceView;
 	private:
 		void CreateDeviceIndependentResources();
 		void CreateDeviceResources();

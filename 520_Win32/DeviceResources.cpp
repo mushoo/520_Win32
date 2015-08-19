@@ -329,6 +329,28 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
 		);
 	}
 
+	// Create UAV for cluster list.
+	textureDesc.Format = DXGI_FORMAT_R32_UINT;
+	textureDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+	ID3D11Texture2D *texture;
+	ThrowIfFailed(
+		m_d3dDevice->CreateTexture2D(&textureDesc, NULL, &texture)
+		);
+	D3D11_UNORDERED_ACCESS_VIEW_DESC UAVDesc;
+	UAVDesc.Format = textureDesc.Format;
+	UAVDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+	UAVDesc.Texture2D.MipSlice = 0;
+	m_clusterListUAV;
+	ThrowIfFailed(
+		m_d3dDevice->CreateUnorderedAccessView(texture, &UAVDesc, &m_clusterListUAV)
+		);
+
+	shaderResourceViewDesc.Format = textureDesc.Format;
+	ThrowIfFailed(
+		m_d3dDevice->CreateShaderResourceView(texture, &shaderResourceViewDesc, &m_clusterListResourceView)
+		);
+
+
 	// Create a render target view of the swap chain back buffer.
 	ComPtr<ID3D11Texture2D> backBuffer;
 	DX::ThrowIfFailed(

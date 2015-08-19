@@ -10,10 +10,18 @@ namespace _520
 		DirectX::XMFLOAT4X4 projection;
 	};
 
-	struct LightPositionBuffer
+	struct LightScreenDimBuffer
 	{
 		DirectX::XMFLOAT3 position;
-		float padding; // Required for 16-byte boundary reasons.
+		UINT windowWidth;
+		UINT windowHeight;
+		float padding[3]; // Required for 16-byte boundary reasons.
+	};
+
+	struct AssignClustersBuffer
+	{
+		float denominator;
+		float padding[3]; // Required for 16-byte boundary reasons.
 	};
 
 	// Used to send per-vertex data to the vertex shader.

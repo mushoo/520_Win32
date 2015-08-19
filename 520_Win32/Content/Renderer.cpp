@@ -135,6 +135,10 @@ void Renderer::CreateWindowSizeDependentResources()
 	UINT width = windowSize.right - windowSize.left;
 	UINT height = windowSize.bottom - windowSize.top;
 
+	// Setting some constant buffers.
+	m_lightScreenDimCBufferData.windowWidth = width;
+	m_lightScreenDimCBufferData.windowHeight = height;
+
 	float aspectRatio = width / (float)height;
 	float fovAngleY = 70.0f * XM_PI / 180.0f;
 
@@ -144,6 +148,9 @@ void Renderer::CreateWindowSizeDependentResources()
 	{
 		fovAngleY *= 2.0f;
 	}
+
+	// Setting some constant buffers.
+	m_assignClustersCBufferData.denominator = 1.0f / log(1 + 2 * tan(fovAngleY) / ((float)height / 32.0f));
 
 	// This sample makes use of a right-handed coordinate system using row-major matrices.
 	XMMATRIX perspectiveMatrix = XMMatrixPerspectiveFovRH(
@@ -176,7 +183,14 @@ void Renderer::Render()
 	}
 
 	RenderGBuffers();
+	AssignClusters();
+	SortClusters();
+	CompactClusters();
+	RenderFinal();
+}
 
+void Renderer::RenderFinal()
+{
 	// Now we draw the full-screen quad.
 	auto context = m_deviceResources->GetD3DDeviceContext();
 
@@ -199,19 +213,19 @@ void Renderer::Render()
 		0
 		);
 
-	m_lightCBufferData.position = m_light;
+	m_lightScreenDimCBufferData.position = m_light;
 	context->UpdateSubresource(
-		m_lightCBuffer.Get(),
+		m_lightScreenDimCBuffer.Get(),
 		0,
 		NULL,
-		&m_lightCBufferData,
+		&m_lightScreenDimCBufferData,
 		0,
 		0
 		);
 	context->PSSetConstantBuffers(
 		0,
 		1,
-		m_lightCBuffer.GetAddressOf()
+		m_lightScreenDimCBuffer.GetAddressOf()
 		);
 
 	context->PSSetSamplers(
@@ -222,7 +236,8 @@ void Renderer::Render()
 
 	// Set the texture G-bufferinos for the final shading.
 	context->PSSetShaderResources(0, m_deviceResources->GBUFFNUM, &m_deviceResources->m_d3dGBufferResourceViews[0]);
-
+	context->PSSetShaderResources(m_deviceResources->GBUFFNUM, 1, &m_deviceResources->m_clusterListResourceView);
+	
 	// Set index and vertex buffers to NULL.
 	context->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
 	context->IASetIndexBuffer(nullptr, (DXGI_FORMAT)0, 0);
@@ -232,7 +247,79 @@ void Renderer::Render()
 
 	// Unset everything we used that's not going to be unset by the next draw.
 	std::vector<ID3D11ShaderResourceView *> nullBuffer(m_deviceResources->GBUFFNUM, 0);
+	ID3D11Buffer *nullCBuffer[1] = { 0 };
 	context->PSSetShaderResources(0, m_deviceResources->GBUFFNUM, &nullBuffer[0]);
+	context->PSSetConstantBuffers(0, 1, nullCBuffer);
+}
+
+void Renderer::AssignClusters()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+
+	RECT windowSize = m_deviceResources->GetWindowSize();
+	UINT width = windowSize.right - windowSize.left;
+	UINT height = windowSize.bottom - windowSize.top;
+
+	context->CSSetShader(
+		m_assignClustersCS.Get(),
+		nullptr,
+		0);
+
+	context->CSSetShaderResources(0, 1, &m_deviceResources->m_d3dGBufferResourceViews[1]);
+	context->CSSetUnorderedAccessViews(0, 1, &m_deviceResources->m_clusterListUAV, 0);
+	context->UpdateSubresource(m_assignClustersCBuffer.Get(), 0, NULL, &m_assignClustersCBufferData, 0, 0);
+	context->CSSetConstantBuffers(0, 1, m_assignClustersCBuffer.GetAddressOf());
+
+	context->Dispatch(width / 32, height / 32, 1);
+
+	ID3D11UnorderedAccessView *nullUAV[1] = { 0 };
+	ID3D11ShaderResourceView *nullRV[1] = { 0 };
+	ID3D11Buffer *nullCBuffer[1] = { 0 };
+	context->CSSetShaderResources(0, 1, nullRV);
+	context->CSSetUnorderedAccessViews(0, 1, nullUAV, 0);
+	context->CSSetConstantBuffers(0, 1, nullCBuffer);
+}
+
+void Renderer::SortClusters()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+
+	RECT windowSize = m_deviceResources->GetWindowSize();
+	UINT width = windowSize.right - windowSize.left;
+	UINT height = windowSize.bottom - windowSize.top;
+
+	context->CSSetShader(
+		m_sortClustersCS.Get(),
+		nullptr,
+		0);
+
+	context->CSSetUnorderedAccessViews(0, 1, &m_deviceResources->m_clusterListUAV, 0);
+
+	context->Dispatch(width / 32, height / 32, 1);
+
+	ID3D11UnorderedAccessView *nullUAV[1] = { 0 };
+	context->CSSetUnorderedAccessViews(0, 1, nullUAV, 0);
+}
+
+void Renderer::CompactClusters()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+
+	RECT windowSize = m_deviceResources->GetWindowSize();
+	UINT width = windowSize.right - windowSize.left;
+	UINT height = windowSize.bottom - windowSize.top;
+
+	context->CSSetShader(
+		m_compactClustersCS.Get(),
+		nullptr,
+		0);
+
+	context->CSSetUnorderedAccessViews(0, 1, &m_deviceResources->m_clusterListUAV, 0);
+
+	context->Dispatch(width / 32, height / 32, 1);
+
+	ID3D11UnorderedAccessView *nullUAV[1] = { 0 };
+	context->CSSetUnorderedAccessViews(0, 1, nullUAV, 0);
 }
 
 void Renderer::RenderGBuffers()
@@ -339,6 +426,9 @@ void Renderer::RenderGBuffers()
 		1,
 		nullBuffer
 		);
+
+	ID3D11ShaderResourceView *nullRV[1] = { 0 };
+	context->PSSetShaderResources(0, 1, nullRV);
 }
 
 void Renderer::CreateDeviceDependentResources()
@@ -400,6 +490,66 @@ void Renderer::CreateDeviceDependentResources()
 		)
 		);
 
+	std::vector<byte> csData = DX::ReadFile("AssignClustersCS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_assignClustersCS
+		)
+		);
+
+	csData = DX::ReadFile("SortClustersCS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_sortClustersCS
+		)
+		);
+	
+	csData = DX::ReadFile("CompactClustersCS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_compactClustersCS
+		)
+		);
+
+	// Create MVP constant buffer.
+	CD3D11_BUFFER_DESC constantBufferDesc(sizeof(ModelViewProjectionConstantBuffer), D3D11_BIND_CONSTANT_BUFFER);
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateBuffer(
+		&constantBufferDesc,
+		nullptr,
+		&m_constantBuffer
+		)
+		);
+
+	// Create Light constant buffer.
+	CD3D11_BUFFER_DESC lightScreenDimCBufferDesc(sizeof(LightScreenDimBuffer), D3D11_BIND_CONSTANT_BUFFER);
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateBuffer(
+		&lightScreenDimCBufferDesc,
+		nullptr,
+		&m_lightScreenDimCBuffer
+		)
+		);
+
+	// Create AssignClusters buffer.
+	CD3D11_BUFFER_DESC assignClustersCBufferDesc(sizeof(AssignClustersBuffer), D3D11_BIND_CONSTANT_BUFFER);
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateBuffer(
+		&assignClustersCBufferDesc,
+		nullptr,
+		&m_assignClustersCBuffer
+		)
+		);
+
 	LoadModels();
 
 	// Once the model is loaded, create the buffers to store it.
@@ -427,27 +577,6 @@ void Renderer::CreateDeviceDependentResources()
 			&m_indexBuffer
 			)
 		);
-
-	// Create MVP constant buffer.
-	CD3D11_BUFFER_DESC constantBufferDesc(sizeof(ModelViewProjectionConstantBuffer), D3D11_BIND_CONSTANT_BUFFER);
-	DX::ThrowIfFailed(
-		m_deviceResources->GetD3DDevice()->CreateBuffer(
-			&constantBufferDesc,
-			nullptr,
-			&m_constantBuffer
-			)
-		);
-
-	// Create Light constant buffer.
-	CD3D11_BUFFER_DESC lightCBufferDesc(sizeof(LightPositionBuffer), D3D11_BIND_CONSTANT_BUFFER);
-	DX::ThrowIfFailed(
-		m_deviceResources->GetD3DDevice()->CreateBuffer(
-			&lightCBufferDesc,
-			nullptr,
-			&m_lightCBuffer
-			)
-		);
-	
 	
 	// Once the texture view is created, create a sampler.This defines how the color
 	// for a particular texture coordinate is determined using the relevant texture data.
@@ -616,6 +745,6 @@ void Renderer::ReleaseDeviceDependentResources()
 	m_constantBuffer.Reset();
 	m_vertexBuffer.Reset();
 	m_indexBuffer.Reset();
-	m_lightCBuffer.Reset();
+	m_lightScreenDimCBuffer.Reset();
 	m_materials.clear();
 }

@@ -76,10 +76,13 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Content\DeferredVS.hlsl" />
-    <FxCompile Include="Content\DeferredPS.hlsl" />
-    <FxCompile Include="Content\FinalPS.hlsl" />
-    <FxCompile Include="Content\FinalVS.hlsl" />
+    <FxCompile Include="Content\Shaders\DeferredPS.hlsl" />
+    <FxCompile Include="Content\Shaders\DeferredVS.hlsl" />
+    <FxCompile Include="Content\Shaders\FinalPS.hlsl" />
+    <FxCompile Include="Content\Shaders\FinalVS.hlsl" />
+    <FxCompile Include="Content\Shaders\SortClustersCS.hlsl" />
+    <FxCompile Include="Content\Shaders\AssignClustersCS.hlsl" />
+    <FxCompile Include="Content\Shaders\CompactClustersCS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Content\DirectXTex\DirectXTex.inl">

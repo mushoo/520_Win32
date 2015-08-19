@@ -36,6 +36,10 @@ namespace _520
 		void Update(DX::StepTimer const& timer);
 		void Render();
 		void RenderGBuffers();
+		void AssignClusters();
+		void SortClusters();
+		void CompactClusters();
+		void RenderFinal();
 		std::shared_ptr<Camera> GetCamera() { return m_camera; }
 
 	private:
@@ -48,13 +52,16 @@ namespace _520
 		Microsoft::WRL::ComPtr<ID3D11Buffer>		m_indexBuffer;
 		Microsoft::WRL::ComPtr<ID3D11VertexShader>	m_finalVS;
 		Microsoft::WRL::ComPtr<ID3D11PixelShader>	m_finalPS;
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_assignClustersCS;
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_sortClustersCS;
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_compactClustersCS;
 		Microsoft::WRL::ComPtr<ID3D11SamplerState>	m_linearSampler;
 		Microsoft::WRL::ComPtr<ID3D11SamplerState>	m_pointSampler;
 		std::vector<std::shared_ptr<_520::Material>>		m_materials;
 		Microsoft::WRL::ComPtr<ID3D11VertexShader>	m_deferredVS;
 		Microsoft::WRL::ComPtr<ID3D11PixelShader>	m_deferredPS;
 		Microsoft::WRL::ComPtr<ID3D11InputLayout>	m_inputLayout;
-
+		
 		ModelViewProjectionConstantBuffer	m_constantBufferData;
 		Microsoft::WRL::ComPtr<ID3D11Buffer>		m_constantBuffer;
 
@@ -67,8 +74,12 @@ namespace _520
 
 		// Sun light.
 		XMFLOAT3 m_light;
-		LightPositionBuffer m_lightCBufferData;
-		Microsoft::WRL::ComPtr<ID3D11Buffer> m_lightCBuffer;
+		LightScreenDimBuffer m_lightScreenDimCBufferData;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> m_lightScreenDimCBuffer;
+
+		// Compute constant buffers.
+		AssignClustersBuffer m_assignClustersCBufferData;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> m_assignClustersCBuffer;
 
 		// Variables used with the rendering loop.
 		bool	m_loadingComplete;

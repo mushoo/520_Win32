@@ -37,6 +37,7 @@ namespace DX
 		std::vector<ID3D11RenderTargetView*>			m_d3dGBufferTargetViews;
 		std::vector<ID3D11ShaderResourceView*>			m_d3dGBufferResourceViews;
 		ID3D11UnorderedAccessView*						m_clusterListUAV;
+		ID3D11UnorderedAccessView*						m_clusterOffsetUAV;
 		ID3D11ShaderResourceView*						m_clusterListResourceView;
 	private:
 		void CreateDeviceIndependentResources();

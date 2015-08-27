@@ -35,10 +35,11 @@ namespace _520
 		void ReleaseDeviceDependentResources();
 		void Update(DX::StepTimer const& timer);
 		void Render();
+		void ClearViews();
 		void RenderGBuffers();
 		void AssignClusters();
 		void SortClusters();
-		void CompactClusters();
+		void CalcClusterNums();
 		void RenderFinal();
 		std::shared_ptr<Camera> GetCamera() { return m_camera; }
 
@@ -55,9 +56,11 @@ namespace _520
 		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_assignClustersCS;
 		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_sortClustersCS;
 		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_compactClustersCS;
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_compactClusters2CS;
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_finalClusterNumsCS;
 		Microsoft::WRL::ComPtr<ID3D11SamplerState>	m_linearSampler;
 		Microsoft::WRL::ComPtr<ID3D11SamplerState>	m_pointSampler;
-		std::vector<std::shared_ptr<_520::Material>>		m_materials;
+		std::vector<std::shared_ptr<_520::Material>>m_materials;
 		Microsoft::WRL::ComPtr<ID3D11VertexShader>	m_deferredVS;
 		Microsoft::WRL::ComPtr<ID3D11PixelShader>	m_deferredPS;
 		Microsoft::WRL::ComPtr<ID3D11InputLayout>	m_inputLayout;

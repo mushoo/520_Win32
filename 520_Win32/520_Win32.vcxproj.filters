@@ -83,6 +83,8 @@
     <FxCompile Include="Content\Shaders\SortClustersCS.hlsl" />
     <FxCompile Include="Content\Shaders\AssignClustersCS.hlsl" />
     <FxCompile Include="Content\Shaders\CompactClustersCS.hlsl" />
+    <FxCompile Include="Content\Shaders\CompactClusters2CS.hlsl" />
+    <FxCompile Include="Content\Shaders\FinalClusterNumsCS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Content\DirectXTex\DirectXTex.inl">

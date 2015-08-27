@@ -6,6 +6,7 @@ groupshared uint temp[N];
 
 [numthreads(32, 32, 1)]
 void main(
+	uint3 Gid : SV_GroupID,
 	uint3 DTid : SV_DispatchThreadID,
 	uint3 GTid : SV_GroupThreadID
 	)

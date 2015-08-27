@@ -182,20 +182,37 @@ void Renderer::Render()
 		return;
 	}
 
+	ClearViews();
 	RenderGBuffers();
 	AssignClusters();
 	SortClusters();
-	CompactClusters();
+	CalcClusterNums();
 	RenderFinal();
+}
+
+void Renderer::ClearViews() {
+	auto context = m_deviceResources->GetD3DDeviceContext();
+	context->ClearRenderTargetView(m_deviceResources->GetBackBufferRenderTargetView(), DirectX::Colors::CornflowerBlue);
+	context->ClearDepthStencilView(m_deviceResources->GetDepthStencilView(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+
+	for (ID3D11RenderTargetView *view : m_deviceResources->m_d3dGBufferTargetViews)
+	{
+		if (view != nullptr)
+			context->ClearRenderTargetView(view, DirectX::Colors::CornflowerBlue);
+	}
+
+	UINT zeroUINT[4] = { 0 };
+	context->ClearUnorderedAccessViewUint(m_deviceResources->m_clusterListUAV, zeroUINT);
+	context->ClearUnorderedAccessViewUint(m_deviceResources->m_clusterOffsetUAV, zeroUINT);
+
 }
 
 void Renderer::RenderFinal()
 {
 	// Now we draw the full-screen quad.
 	auto context = m_deviceResources->GetD3DDeviceContext();
-
-	context->ClearRenderTargetView(m_deviceResources->GetBackBufferRenderTargetView(), DirectX::Colors::CornflowerBlue);
 	context->ClearDepthStencilView(m_deviceResources->GetDepthStencilView(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+
 	// Reset render targets to the screen.
 	ID3D11RenderTargetView *const targets[1] = { m_deviceResources->GetBackBufferRenderTargetView() };
 	context->OMSetRenderTargets(1, targets, m_deviceResources->GetDepthStencilView());
@@ -301,7 +318,7 @@ void Renderer::SortClusters()
 	context->CSSetUnorderedAccessViews(0, 1, nullUAV, 0);
 }
 
-void Renderer::CompactClusters()
+void Renderer::CalcClusterNums()
 {
 	auto context = m_deviceResources->GetD3DDeviceContext();
 
@@ -315,23 +332,31 @@ void Renderer::CompactClusters()
 		0);
 
 	context->CSSetUnorderedAccessViews(0, 1, &m_deviceResources->m_clusterListUAV, 0);
+	context->CSSetUnorderedAccessViews(1, 1, &m_deviceResources->m_clusterOffsetUAV, 0);
 
 	context->Dispatch(width / 32, height / 32, 1);
+	
+	context->CSSetShader(
+		m_compactClusters2CS.Get(),
+		nullptr,
+		0);
 
-	ID3D11UnorderedAccessView *nullUAV[1] = { 0 };
-	context->CSSetUnorderedAccessViews(0, 1, nullUAV, 0);
+	context->Dispatch(1, 1, 1);
+
+	context->CSSetShader(
+		m_finalClusterNumsCS.Get(),
+		nullptr,
+		0);
+
+	context->Dispatch(width / 32, height / 32, 1);
+	
+	ID3D11UnorderedAccessView *nullUAV[2] = { 0 };
+	context->CSSetUnorderedAccessViews(0, 2, nullUAV, 0);
 }
 
 void Renderer::RenderGBuffers()
 {
 	auto context = m_deviceResources->GetD3DDeviceContext();
-
-	context->ClearDepthStencilView(m_deviceResources->GetDepthStencilView(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
-	for (ID3D11RenderTargetView *view : m_deviceResources->m_d3dGBufferTargetViews)
-	{
-		if (view != nullptr)
-			context->ClearRenderTargetView(view, DirectX::Colors::CornflowerBlue);
-	}
 
 	// Set render targets.
 	context->OMSetRenderTargets(
@@ -517,6 +542,26 @@ void Renderer::CreateDeviceDependentResources()
 		csData.size(),
 		nullptr,
 		&m_compactClustersCS
+		)
+		);
+
+	csData = DX::ReadFile("CompactClusters2CS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_compactClusters2CS
+		)
+		);
+
+	csData = DX::ReadFile("FinalClusterNumsCS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_finalClusterNumsCS
 		)
 		);
 

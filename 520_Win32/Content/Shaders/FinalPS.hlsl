@@ -44,6 +44,8 @@ float4 main(PixelShaderInput input) : SV_TARGET
 		color = saturate(color);
 	}
 
+	uint clusterNum2 = clusterAssignTexture[input.tex * uint2(width, height)];
+	return float4((clusterNum2.rrr % 4)/4.0f, 1.0f);
 
 	float4 zcolor;
 	zcolor.x = abs(ddx(position.w));
@@ -60,8 +62,8 @@ float4 main(PixelShaderInput input) : SV_TARGET
 		return float4(0, 0, 0, 1.0f);
 	}
 	default: {
-		uint clusterNum = clusterAssignTexture[tex * uint2(width, height)];
-		float randNum = rand(clusterNum);
+		float clusterNum = clusterAssignTexture[tex * uint2(width, height)]>>20;
+		/*float randNum = rand(clusterNum);
 		uint3 cluster;
 		cluster.x = (clusterNum >> 16) & 0xFF;
 		cluster.y = (clusterNum >> 8) & 0xFF;
@@ -69,8 +71,8 @@ float4 main(PixelShaderInput input) : SV_TARGET
 		float3 color;
 		color.r = rand(float2(cluster.x, cluster.y));
 		color.g = rand(float2(cluster.y, cluster.z));
-		color.b = rand(float2(cluster.z, cluster.x));
-		return float4(color, 1.0f);
+		color.b = rand(float2(cluster.z, cluster.x));*/
+		return float4(clusterNum.rrr, 1.0f);
 	}
 	}
 }

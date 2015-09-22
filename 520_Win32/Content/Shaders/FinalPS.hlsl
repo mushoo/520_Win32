@@ -1,7 +1,26 @@
+struct Cluster
+{
+	uint clusterNum;
+	uint lightCount;
+	uint lightOffset;
+	uint padding;
+};
+
+struct Light
+{
+	float3 position;
+	float3 color;
+	float radius;
+	float padding;
+};
+
 Texture2D colorTexture : register(t0);
 Texture2D positionTexture : register(t1);
 Texture2D normalTexture : register(t2);
 Texture2D<uint> clusterAssignTexture : register(t3);
+StructuredBuffer<Cluster> clusterList : register(t4);
+Buffer<uint> clusterLightList : register(t5);
+StructuredBuffer<Light> lightList: register(t6);
 
 SamplerState pointSampler;
 
@@ -19,9 +38,7 @@ struct PixelShaderInput
 	float2 tex : TEXCOORD0;
 };
 
-float rand(float2 co){
-	return frac(sin(dot(co.xy, float2(12.9898, 78.233))) * 43758.5453);
-}
+float sqr(float x) { return x * x; }
 
 float4 main(PixelShaderInput input) : SV_TARGET
 {
@@ -34,45 +51,58 @@ float4 main(PixelShaderInput input) : SV_TARGET
 	float4 position = positionTexture.Sample(pointSampler, tex);
 	float4 normal = normalTexture.Sample(pointSampler, tex);
 
-	float3 ambientColor = diffuseColor * 0.2;
-
-	float3 color = ambientColor;
-	float lightIntensity = saturate(dot(normal.xyz, normalize(lightPos - position.xyz)));
-	if (lightIntensity > 0.0f)
-	{
-		color += (diffuseColor * lightIntensity);
-		color = saturate(color);
-	}
-
-	uint clusterNum2 = clusterAssignTexture[input.tex * uint2(width, height)];
-	return float4((clusterNum2.rrr % 4)/4.0f, 1.0f);
-
-	float4 zcolor;
-	zcolor.x = abs(ddx(position.w));
-	zcolor.y = abs(ddy(position.w));
-	zcolor.z = 0.0;
-	zcolor.w = 0.0;
-
 	switch (section) {
-	case 0: return float4(color, 1.0f);
-	case 1: return 1000*zcolor;
+	case 0: {
+		uint clusterIndex = clusterAssignTexture[tex * uint2(width, height)];
+		uint lightCount = clusterList[clusterIndex].lightCount;
+		uint listOffset = clusterList[clusterIndex].lightOffset;
+		float3 lightColor = float3(0, 0, 0);
+		for (uint i = 0; i < lightCount; i++)
+		{
+			uint lightIndex = clusterLightList[listOffset];
+			Light light = lightList[lightIndex];
+			float dist = length(light.position - position.xyz);
+			float att = sqr(clamp(1.0 - sqr(dist) / sqr(light.radius), 0.0, 1.0));
+			if (dist < light.radius)
+			{
+				float lightIntensity = saturate(dot(normal.xyz, normalize(light.position - position.xyz)));
+				if (lightIntensity > 0.0f)
+					lightColor += light.color * lightIntensity * att;
+			}
+			listOffset++;
+		}
+		float3 ambientColor = diffuseColor * 0.01;
+		float3 color = ambientColor + lightColor * diffuseColor * 0.5;
+		return float4(pow(color, 1.0 / 2.2), 1.0f);
+	}
+	case 1: {
+		uint clusterIndex = clusterAssignTexture[tex * uint2(width, height)];
+		uint lightCount = clusterList[clusterIndex].lightCount;
+		uint listOffset = clusterList[clusterIndex].lightOffset;
+		float3 color = float3(0, 0, 0);
+		for (uint i = 0; i < lightCount; i++)
+		{
+			uint lightIndex = clusterLightList[listOffset];
+			Light light = lightList[lightIndex];
+			float dist = length(light.position - position.xyz);
+			if (dist < light.radius)
+				color += light.color * 0.5;
+			listOffset++;
+		}
+		return float4(pow(color, 1.0 / 2.2), 1.0f);
+	}
 	case 2: {
-		/*uint clusterNum = clusterAssignTexture[tex * uint2(width, height)];
-		float color = (float)(clusterNum & 0xFF) / 30.0f;*/
-		return float4(0, 0, 0, 1.0f);
+		uint clusterIndex = clusterAssignTexture[tex * uint2(width, height)];
+		uint lightCount = clusterList[clusterIndex].lightCount;
+		//uint clusterNumZ = clusterList[clusterIndex].lightCount;
+		//float calculated = asfloat(clusterList[clusterIndex].lightCount);
+		//float actual = position.y;
+		float color = 0.33 * lightCount * (!all(normal.xyz == 0.0));//abs(calculated - actual);// 
+		return float4(color.rrr, 1.0f);
 	}
 	default: {
-		float clusterNum = clusterAssignTexture[tex * uint2(width, height)]>>20;
-		/*float randNum = rand(clusterNum);
-		uint3 cluster;
-		cluster.x = (clusterNum >> 16) & 0xFF;
-		cluster.y = (clusterNum >> 8) & 0xFF;
-		cluster.z = clusterNum & 0xFF;
-		float3 color;
-		color.r = rand(float2(cluster.x, cluster.y));
-		color.g = rand(float2(cluster.y, cluster.z));
-		color.b = rand(float2(cluster.z, cluster.x));*/
-		return float4(clusterNum.rrr, 1.0f);
+		uint clusterIndex = clusterAssignTexture[tex * uint2(width, height)];
+		return float4(((float)(clusterIndex % 4) / 4.0f).rrr, 1.0f);
 	}
 	}
 }

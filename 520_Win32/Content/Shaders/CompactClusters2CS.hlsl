@@ -25,8 +25,7 @@ void main(
 
 	// Load the cluster number into shared memory
 	if (index == 0) temp[index] = 0;
-	temp[index + 1] = clusterCounts[DTid.xy];
-	GroupMemoryBarrierWithGroupSync();
+	temp[index] = clusterCounts[DTid.xy];
 
 	// Step 1: Intra - warp scan in each warp
 	uint val = scan_warp(index);

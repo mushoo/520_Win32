@@ -74,6 +74,12 @@
     <ClInclude Include="Content\DirectXTex\DirectXTex.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Content\LightSystem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Content\MortonKey\mortonkeys.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Content\Shaders\DeferredPS.hlsl" />
@@ -85,6 +91,10 @@
     <FxCompile Include="Content\Shaders\CompactClustersCS.hlsl" />
     <FxCompile Include="Content\Shaders\CompactClusters2CS.hlsl" />
     <FxCompile Include="Content\Shaders\FinalClusterNumsCS.hlsl" />
+    <FxCompile Include="Content\Shaders\AABBConstructTreeCS.hlsl" />
+    <FxCompile Include="Content\Shaders\TraverseTreeCS.hlsl" />
+    <FxCompile Include="Content\Shaders\SumClusterLightCountsCS.hlsl" />
+    <FxCompile Include="Content\Shaders\MakeLightListCS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Content\DirectXTex\DirectXTex.inl">

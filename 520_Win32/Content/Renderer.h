@@ -59,6 +59,7 @@ namespace _520
 		void Render();
 		void ClearViews();
 		void RenderGBuffers();
+		void RenderLightModels();
 		void AssignClusters();
 		void SortClusters();
 		void CalcClusterNums();
@@ -121,6 +122,14 @@ namespace _520
 		UINT32 m_numClusters;
 
 		// Light system buffer.
+		ID3D11VertexShader *m_lightModelVS;
+		ID3D11PixelShader *m_lightModelPS;
+		std::vector<VertexPositionNormal> m_lightModel;
+		ID3D11RenderTargetView *m_lightModelRTV;
+		ID3D11ShaderResourceView *m_lightModelSRV;
+		ID3D11InputLayout *m_lightInputLayout;
+		ID3D11Buffer *m_lightVertexBuffer;
+		ID3D11Buffer *m_lightInstanceBuffer;
 		ID3D11Buffer *m_treeBuffer;
 		ID3D11UnorderedAccessView *m_lightTreeView;
 		ID3D11ShaderResourceView *m_lightTreeResourceView;

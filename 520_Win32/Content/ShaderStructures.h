@@ -31,4 +31,16 @@ namespace _520
 		DirectX::XMFLOAT2 texcoord;
 		DirectX::XMFLOAT3 normal;
 	};
+
+	struct VertexPositionNormal
+	{
+		DirectX::XMFLOAT3 pos;
+		DirectX::XMFLOAT3 normal;
+	};
+
+	struct LightInstance
+	{
+		DirectX::XMFLOAT3 pos;
+		DirectX::XMFLOAT3 color;
+	};
 }

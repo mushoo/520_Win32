@@ -95,6 +95,8 @@
     <FxCompile Include="Content\Shaders\TraverseTreeCS.hlsl" />
     <FxCompile Include="Content\Shaders\SumClusterLightCountsCS.hlsl" />
     <FxCompile Include="Content\Shaders\MakeLightListCS.hlsl" />
+    <FxCompile Include="Content\Shaders\LightModelVS.hlsl" />
+    <FxCompile Include="Content\Shaders\LightModelPS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Content\DirectXTex\DirectXTex.inl">

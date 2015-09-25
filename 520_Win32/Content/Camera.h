@@ -17,9 +17,11 @@ namespace _520
 			m_sensitivity = 0.005f;
 
 			m_forward = m_back = m_left = m_right = m_pointer = false;
-			m_position = XMVectorSet(0.405847669, 0.105964065, -3.34974909, 0);
+			/*m_position = XMVectorSet(0.405847669, 0.105964065, -3.34974909, 0);
 			m_yaw = 0.110001020;
-			m_pitch = -0.434999615;
+			m_pitch = -0.434999615;*/
+			m_position = XMVectorSet(0, 0, 0, 0);
+			m_yaw = m_pitch = 0;
 		}
 
 		void OnPointerPressed(int xCoord, int yCoord)

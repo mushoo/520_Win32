@@ -216,6 +216,7 @@ void Renderer::Render()
 
 	ClearViews();
 	RenderGBuffers();
+	RenderLightModels();
 	AssignClusters();
 	SortClusters();
 	CalcClusterNums();
@@ -231,11 +232,13 @@ void Renderer::ClearViews() {
 	context->ClearRenderTargetView(m_deviceResources->GetBackBufferRenderTargetView(), DirectX::Colors::CornflowerBlue);
 	context->ClearDepthStencilView(m_deviceResources->GetDepthStencilView(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
+	float zeroFloat[4] = { 0 };
 	for (ID3D11RenderTargetView *view : m_deviceResources->m_d3dGBufferTargetViews)
 	{
 		if (view != nullptr)
-			context->ClearRenderTargetView(view, DirectX::Colors::Black);
+			context->ClearRenderTargetView(view, zeroFloat);
 	}
+	context->ClearRenderTargetView(m_lightModelRTV, zeroFloat);
 
 	UINT zeroUINT[4] = { 0 };
 	context->ClearUnorderedAccessViewUint(m_deviceResources->m_clusterListUAV, zeroUINT);
@@ -299,6 +302,7 @@ void Renderer::RenderFinal()
 	context->PSSetShaderResources(m_deviceResources->GBUFFNUM + 1, 1, &m_clusterResourceView);
 	context->PSSetShaderResources(m_deviceResources->GBUFFNUM + 2, 1, &m_clusterLightListsResourceView);
 	context->PSSetShaderResources(m_deviceResources->GBUFFNUM + 3, 1, &m_lightListResourceView);
+	context->PSSetShaderResources(m_deviceResources->GBUFFNUM + 4, 1, &m_lightModelSRV);
 	
 	// Set index and vertex buffers to NULL.
 	context->IASetVertexBuffers(0, 0, nullptr, nullptr, nullptr);
@@ -308,7 +312,7 @@ void Renderer::RenderFinal()
 	context->Draw(3, 0);
 
 	// Unset everything we used that's not going to be unset by the next draw.
-	std::vector<ID3D11ShaderResourceView *> nullBuffer(m_deviceResources->GBUFFNUM + 4, 0);
+	std::vector<ID3D11ShaderResourceView *> nullBuffer(m_deviceResources->GBUFFNUM + 5, 0);
 	ID3D11Buffer *nullCBuffer[1] = { 0 };
 	context->PSSetShaderResources(0, nullBuffer.size(), &nullBuffer[0]);
 	context->PSSetConstantBuffers(0, 1, nullCBuffer);
@@ -639,7 +643,7 @@ void Renderer::RenderGBuffers()
 		);
 	context->IASetIndexBuffer(
 		m_indexBuffer.Get(),
-		DXGI_FORMAT_R32_UINT, // Each index is one 32-bit unsigned integer (short).
+		DXGI_FORMAT_R32_UINT, // Each index is one 32-bit unsigned integer.
 		0
 		);
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -680,6 +684,32 @@ void Renderer::RenderGBuffers()
 
 	ID3D11ShaderResourceView *nullRV[1] = { 0 };
 	context->PSSetShaderResources(0, 1, nullRV);
+}
+
+void Renderer::RenderLightModels()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+
+	context->OMSetRenderTargets(1, &m_lightModelRTV, m_deviceResources->GetDepthStencilView());
+	context->VSSetShader( m_lightModelVS, nullptr, 0 );
+	context->PSSetShader( m_lightModelPS, nullptr, 0 );
+	context->VSSetConstantBuffers( 0, 1, m_constantBuffer.GetAddressOf() );
+	context->IASetInputLayout(m_lightInputLayout);
+
+	unsigned int strides[2] = { sizeof(VertexPositionNormal), sizeof(LightInstance) };
+	unsigned int offsets[2] = { 0, 0 };
+	ID3D11Buffer* bufferPointers[2] = { m_lightVertexBuffer, m_lightInstanceBuffer };
+	context->IASetVertexBuffers(0, 2, bufferPointers, strides, offsets);
+
+	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	context->DrawInstanced(m_lightModel.size(), _Lights::lights.size(), 0, 0);
+
+	ID3D11RenderTargetView *nullRTV[1] = { 0 };
+	ID3D11DepthStencilView *nullDepthView = 0;
+	context->OMSetRenderTargets( 1, nullRTV, nullDepthView );
+
+	ID3D11Buffer *nullBuffer[1] = { 0 };
+	context->VSSetConstantBuffers( 0, 1, nullBuffer );
 }
 
 void Renderer::CreateClusterResources()
@@ -922,6 +952,171 @@ void Renderer::CreateLightResources()
 		&SRVDesc,
 		&m_lightListResourceView
 		)
+		);
+
+	std::vector<byte> vsData = DX::ReadFile("LightModelVS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateVertexShader(
+		&vsData[0],
+		vsData.size(),
+		nullptr,
+		&m_lightModelVS
+		)
+		);
+
+	std::vector<byte> psData = DX::ReadFile("LightModelPS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreatePixelShader(
+		&psData[0],
+		psData.size(),
+		nullptr,
+		&m_lightModelPS
+		)
+		);
+
+	static const D3D11_INPUT_ELEMENT_DESC lightVertexDesc[] =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+
+		// Instance data.
+		{ "INSTANCEPOS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 1, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+		{ "INSTANCECOLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 1, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+	};
+
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateInputLayout(
+		lightVertexDesc,
+		ARRAYSIZE(lightVertexDesc),
+		&vsData[0],
+		vsData.size(),
+		&m_lightInputLayout
+		)
+		);
+	/*gl.glVertex(100, 100, −100);
+	gl.glVertex(100, 300, −100);
+	gl.glVertex(300, 300, −100);
+
+	gl.glVertex(300, 300, −300);
+	gl.glVertex(300, 100, −300);
+
+	gl.glVertex(100, 100, −100);
+	gl.glVertex(100, 100, −300);
+
+	gl.glVertex(100, 300, −300);
+	gl.glVertex(100, 300, −100);
+
+	gl.glVertex(100, 300, −100);
+	gl.glVertex(100, 300, −300);
+
+	gl.glVertex(100, 100, −300);
+	gl.glVertex(300, 100, −300);*/
+	m_lightModel = {
+		{ { -1.0f, -1.0f, -1.0f, },{} }, // triangle 1 : begin
+		{ {-1.0f, -1.0f, 1.0f, }, {} },
+		{ { -1.0f, 1.0f, 1.0f, }, {} },// triangle 1 : end
+		{ { 1.0f, 1.0f, -1.0f, }, {} },// triangle 2 : begin
+		{ { -1.0f, -1.0f, -1.0f, }, {} },
+		{ { -1.0f, 1.0f, -1.0f, }, {} },// triangle 2 : end
+		{ { 1.0f, -1.0f, 1.0f, }, {} },
+		{ { -1.0f, -1.0f, -1.0f, }, {} },
+		{ { 1.0f, -1.0f, -1.0f, }, {} },
+		{ { 1.0f, 1.0f, -1.0f, }, {} },
+		{ { 1.0f, -1.0f, -1.0f, }, {} },
+		{ { -1.0f, -1.0f, -1.0f, }, {} },
+		{ { -1.0f, -1.0f, -1.0f, }, {} },
+		{ { -1.0f, 1.0f, 1.0f, }, {} },
+		{ { -1.0f, 1.0f, -1.0f, }, {} },
+		{ { 1.0f, -1.0f, 1.0f, }, {} },
+		{ { -1.0f, -1.0f, 1.0f, }, {} },
+		{ { -1.0f, -1.0f, -1.0f, }, {} },
+		{ { -1.0f, 1.0f, 1.0f, }, {} },
+		{ { -1.0f, -1.0f, 1.0f, }, {} },
+		{ { 1.0f, -1.0f, 1.0f, }, {} },
+		{ { 1.0f, 1.0f, 1.0f, }, {} },
+		{ { 1.0f, -1.0f, -1.0f, }, {} },
+		{ { 1.0f, 1.0f, -1.0f, }, {} },
+		{ { 1.0f, -1.0f, -1.0f, }, {} },
+		{ { 1.0f, 1.0f, 1.0f, }, {} },
+		{ { 1.0f, -1.0f, 1.0f, }, {} },
+		{ { 1.0f, 1.0f, 1.0f, }, {} },
+		{ { 1.0f, 1.0f, -1.0f, }, {} },
+		{ { -1.0f, 1.0f, -1.0f, }, {} },
+		{ { 1.0f, 1.0f, 1.0f, }, {} },
+		{ { -1.0f, 1.0f, -1.0f, }, {} },
+		{ { -1.0f, 1.0f, 1.0f, }, {} },
+		{ { 1.0f, 1.0f, 1.0f, }, {} },
+		{ { -1.0f, 1.0f, 1.0f, }, {} },
+		{ { 1.0f, -1.0f, 1.0f }, {} },
+	};
+	D3D11_SUBRESOURCE_DATA lightVertexBufferData = { 0 };
+	lightVertexBufferData.pSysMem = &m_lightModel[0];
+	CD3D11_BUFFER_DESC lightVertexBufferDesc(sizeof(VertexPositionNormal) * m_lightModel.size(), D3D11_BIND_VERTEX_BUFFER);
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateBuffer(
+		&lightVertexBufferDesc,
+		&lightVertexBufferData,
+		&m_lightVertexBuffer
+		)
+		);
+
+	vector<LightInstance> lightInstances(_Lights::lights.size());
+	for (int i = 0; i < lightInstances.size(); i++)
+	{
+		lightInstances[i].pos = _Lights::lights[i].pos;
+		lightInstances[i].color = _Lights::lights[i].color;
+	}
+	D3D11_SUBRESOURCE_DATA lightInstanceBufferData = { 0 };
+	lightInstanceBufferData.pSysMem = &lightInstances[0];
+	CD3D11_BUFFER_DESC lightInstanceBufferDesc(sizeof(LightInstance) * lightInstances.size(), D3D11_BIND_VERTEX_BUFFER);
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateBuffer(
+		&lightInstanceBufferDesc,
+		&lightInstanceBufferData,
+		&m_lightInstanceBuffer
+		)
+		);
+
+	// Make render surface to draw lights on.
+	RECT windowSize = m_deviceResources->GetWindowSize();
+	UINT width = windowSize.right - windowSize.left;
+	UINT height = windowSize.bottom - windowSize.top;
+
+	ZeroMemory(&textureDesc, sizeof(textureDesc));
+	textureDesc.Width = width;
+	textureDesc.Height = height;
+	textureDesc.MipLevels = 1;
+	textureDesc.ArraySize = 1;
+	textureDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	textureDesc.SampleDesc.Count = 1;
+	textureDesc.Usage = D3D11_USAGE_DEFAULT;
+	textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+	textureDesc.CPUAccessFlags = 0;
+	textureDesc.MiscFlags = 0;
+
+	D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
+	renderTargetViewDesc.Format = textureDesc.Format;
+	renderTargetViewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+	renderTargetViewDesc.Texture2D.MipSlice = 0;
+
+	D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
+	shaderResourceViewDesc.Format = textureDesc.Format;
+	shaderResourceViewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+	shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
+	shaderResourceViewDesc.Texture2D.MipLevels = 1;
+
+	ID3D11Texture2D *texture;
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->
+			CreateTexture2D(&textureDesc, NULL, &texture)
+		);
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->
+			CreateRenderTargetView(texture, &renderTargetViewDesc, &m_lightModelRTV)
+		);
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->
+			CreateShaderResourceView(texture, &shaderResourceViewDesc, &m_lightModelSRV)
 		);
 }
 
@@ -1174,120 +1369,6 @@ void Renderer::CreateDeviceDependentResources()
 	
 	m_loadingComplete = true;
 }
-
-/*void Renderer::CreateTiledResources()
-{
-	// Create the tiled texture.
-	D3D11_TEXTURE2D_DESC textureDesc;
-	ZeroMemory(&textureDesc, sizeof(textureDesc));
-	textureDesc.Width = 1024;
-	textureDesc.Height = 1024;
-	textureDesc.ArraySize = 1;
-	textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	textureDesc.SampleDesc.Count = 1;
-	textureDesc.MipLevels = 1;
-	textureDesc.Usage = D3D11_USAGE_DEFAULT;
-	textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-	textureDesc.MiscFlags = D3D11_RESOURCE_MISC_TILED;
-	DX::ThrowIfFailed(m_deviceResources->GetD3DDevice()->CreateTexture2D(&textureDesc, nullptr, &m_texture));
-
-	// Allocate the tiled resource pool.
-	D3D11_BUFFER_DESC tilePoolDesc;
-	ZeroMemory(&tilePoolDesc, sizeof(tilePoolDesc));
-	const int tileSize = 128 * 128 * 4; //128*128 texels, 4 bytes per texel.
-	const int numTiles = 2; //we want two tiles that we can reuse.
-	tilePoolDesc.ByteWidth = tileSize * numTiles;
-	tilePoolDesc.Usage = D3D11_USAGE_DEFAULT;
-	tilePoolDesc.MiscFlags = D3D11_RESOURCE_MISC_TILE_POOL;
-	DX::ThrowIfFailed(m_deviceResources->GetD3DDevice()->CreateBuffer(&tilePoolDesc, nullptr, &m_tilePool));
-
-	// Create temporary resource so we can color the tiles.
-	D3D11_BUFFER_DESC tempBufferDesc;
-	ZeroMemory(&tempBufferDesc, sizeof(tempBufferDesc));
-	tempBufferDesc.ByteWidth = tileSize;
-	tempBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_TILED;
-	tempBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> tempBuffer;
-	DX::ThrowIfFailed(m_deviceResources->GetD3DDevice()->CreateBuffer(&tempBufferDesc, nullptr, &tempBuffer));
-
-	// Map the resource to the first tile.
-	D3D11_TILED_RESOURCE_COORDINATE startCoordinate;
-	ZeroMemory(&startCoordinate, sizeof(startCoordinate));
-	D3D11_TILE_REGION_SIZE regionSize;
-	ZeroMemory(&regionSize, sizeof(regionSize));
-	regionSize.NumTiles = 1;
-	UINT rangeFlags = D3D11_TILE_RANGE_REUSE_SINGLE_TILE;
-	UINT tileStartOffset = 0;
-	DX::ThrowIfFailed(
-		m_deviceResources->GetD3DDeviceContext()->UpdateTileMappings(
-			m_texture.Get(),
-			1,
-			&startCoordinate,
-			&regionSize,
-			m_tilePool.Get(),
-			1,
-			&rangeFlags,
-			&tileStartOffset,
-			nullptr,
-			0
-			)
-		);
-	// Color the tile black.
-	byte defaultTileData[tileSize];
-	FillMemory(defaultTileData, tileSize, 0x7F);
-	m_deviceResources->GetD3DDeviceContext()->UpdateTiles(m_texture.Get(), &startCoordinate, &regionSize, defaultTileData, 0);
-
-	//Map the resource to the second tile.
-	tileStartOffset = 1;
-	DX::ThrowIfFailed(
-		m_deviceResources->GetD3DDeviceContext()->UpdateTileMappings(
-		m_texture.Get(),
-		1,
-		&startCoordinate,
-		&regionSize,
-		m_tilePool.Get(),
-		1,
-		&rangeFlags,
-		&tileStartOffset,
-		nullptr,
-		0
-		)
-		);
-	// Color the tile white.
-	FillMemory(defaultTileData, tileSize, 0xCF);
-	m_deviceResources->GetD3DDeviceContext()->UpdateTiles(m_texture.Get(), &startCoordinate, &regionSize, defaultTileData, 0);
-
-	// Map the texture to the two tiles in a checkerboard pattern.
-	for (int y = 0; y < 8; y++) {
-		for (int x = 0; x < 8; x++) {
-			//if ((x + y) % 4 == 3) continue;
-			D3D11_TILED_RESOURCE_COORDINATE startCoordinate;
-			ZeroMemory(&startCoordinate, sizeof(startCoordinate));
-			startCoordinate.X = x;
-			startCoordinate.Y = y;
-			D3D11_TILE_REGION_SIZE regionSize;
-			ZeroMemory(&regionSize, sizeof(regionSize));
-			regionSize.NumTiles = 1;
-			UINT rangeFlags = D3D11_TILE_RANGE_REUSE_SINGLE_TILE;
-			UINT tileStartOffset = (x + y) % 2;
-			DX::ThrowIfFailed(
-				m_deviceResources->GetD3DDeviceContext()->UpdateTileMappings(
-				m_texture.Get(),
-				1,
-				&startCoordinate,
-				&regionSize,
-				m_tilePool.Get(),
-				1,
-				&rangeFlags,
-				&tileStartOffset,
-				nullptr,
-				0
-				)
-				);
-
-		}
-	}
-}*/
 
 void Renderer::ReleaseDeviceDependentResources()
 {

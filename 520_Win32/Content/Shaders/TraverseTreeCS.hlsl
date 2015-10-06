@@ -11,7 +11,7 @@ struct Cluster
 	uint clusterNum;
 	uint lightCount;
 	uint lightOffset;
-	uint padding;
+	bool active;
 };
 
 struct Pair
@@ -25,7 +25,6 @@ struct Pair
 cbuffer ConstantBuffer : register(b0)
 {
 	uint maxDepth;
-	uint totalClusters;
 	uint width;
 	uint height;
 	float denominator;
@@ -164,7 +163,7 @@ void main(
 	uint warpid = GTid.y;
 	uint clusterNum = clusters[clusterId].clusterNum;
 
-	if (clusterId >= totalClusters) return;
+	if (!clusters[clusterId].active) return;
 	lightCounts[warpid][lane] = 0;
 	if (lane == 0)
 		totalCounts[warpid] = 0;

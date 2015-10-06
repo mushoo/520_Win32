@@ -6,12 +6,14 @@
 #include "SimpleMesh.h"
 #include "objLoader\tiny_obj_loader.h"
 #include "Camera.h"
+#include "Profiler.h"
+#include "LightSystem.h"
 
 
 namespace _520
 {
 #define MAXCLUSTERS 100000
-#define MAXPAIRS 100000
+#define MAXPAIRS 1000000
 
 	struct TriangleIndices
 	{
@@ -45,7 +47,7 @@ namespace _520
 	class Renderer
 	{
 	public:
-		Renderer(const std::shared_ptr<DX::DeviceResources>& deviceResources);
+		Renderer(const std::shared_ptr<DX::DeviceResources> deviceResources, std::shared_ptr<Profiler> profiler);
 		void CreateDeviceDependentResources();
 		void CreateWindowSizeDependentResources();
 		void CreateClusterResources();
@@ -63,6 +65,11 @@ namespace _520
 		void AssignClusters();
 		void SortClusters();
 		void CalcClusterNums();
+		void CalcLightBoundingBox();
+		void CalcZCodes();
+		void SortLights();
+		bool SortLightsInitial(UINT32 maxSize);
+		bool SortLightsIncremental(UINT32 presorted, UINT32 maxSize, UINT32 treeOffset);
 		void ConstructLightTree();
 		void TraverseTree();
 		void SumClusterLightCounts();
@@ -71,9 +78,11 @@ namespace _520
 		std::shared_ptr<Camera> GetCamera() { return m_camera; }
 
 	private:
+		std::shared_ptr<std::vector<_Lights::AABBNode>> checkTree();
 		// Cached pointer to device resources.
 		std::shared_ptr<DX::DeviceResources> m_deviceResources;
 		std::shared_ptr<Camera> m_camera = nullptr;
+		std::shared_ptr<Profiler> m_profiler = nullptr;
 
 		// D3D resources.
 		Microsoft::WRL::ComPtr<ID3D11Buffer>		m_vertexBuffer;
@@ -86,6 +95,8 @@ namespace _520
 		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_compactClusters2CS;
 		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_finalClusterNumsCS;
 		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_AABBConstructTreeCS;
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_prefixMinMaxLightPosCS;
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader> m_calcZCodesCS;
 		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_traverseTreeCS;
 		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_sumClusterLightCountsCS;
 		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_makeLightListCS;
@@ -95,9 +106,14 @@ namespace _520
 		Microsoft::WRL::ComPtr<ID3D11VertexShader>	m_deferredVS;
 		Microsoft::WRL::ComPtr<ID3D11PixelShader>	m_deferredPS;
 		Microsoft::WRL::ComPtr<ID3D11InputLayout>	m_inputLayout;
+		// Sorting resources
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_sortStepCS;
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_sort512CS;
+		Microsoft::WRL::ComPtr<ID3D11ComputeShader>	m_sortInner512CS;
 		
 		ModelViewProjectionConstantBuffer	m_constantBufferData;
 		Microsoft::WRL::ComPtr<ID3D11Buffer>		m_constantBuffer;
+		Microsoft::WRL::ComPtr<ID3D11Buffer>		m_sortParameters;
 
 		// Meshes and Materials.
 		std::vector<SimpleMesh> m_meshes;
@@ -119,7 +135,6 @@ namespace _520
 		ID3D11ShaderResourceView *m_pairListResourceView;
 		ID3D11UnorderedAccessView *m_clusterLightListsView;
 		ID3D11ShaderResourceView *m_clusterLightListsResourceView;
-		UINT32 m_numClusters;
 
 		// Light system buffer.
 		ID3D11VertexShader *m_lightModelVS;

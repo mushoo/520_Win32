@@ -3,7 +3,7 @@ struct Cluster
 	uint clusterNum;
 	uint lightCount;
 	uint lightOffset;
-	uint padding;
+	bool active;
 };
 
 cbuffer ConstantBuffer : register(b0)
@@ -36,7 +36,7 @@ void main(
 	uint warpid = GTid.y;
 	uint index = GTid.x + 32 * GTid.y + 1024 * Gid.x;
 	index *= stride;
-
+	//if (!clusters[1024 * stride * Gid.x].active) return;
 	if (!finish)
 	{
 		uint first = clusters[index].lightOffset;

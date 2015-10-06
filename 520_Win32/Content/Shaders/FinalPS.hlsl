@@ -5,7 +5,7 @@ struct Cluster
 	uint clusterNum;
 	uint lightCount;
 	uint lightOffset;
-	uint padding;
+	bool active;
 };
 
 struct Light

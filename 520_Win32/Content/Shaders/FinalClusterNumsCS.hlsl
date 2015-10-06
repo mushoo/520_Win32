@@ -3,7 +3,7 @@ struct Cluster
 	uint clusterNum;
 	uint lightCount;
 	uint lightOffset;
-	uint padding;
+	bool padding;
 };
 
 RWTexture2D<uint> data : register(u0);
@@ -33,7 +33,7 @@ void main(
 	c.clusterNum = (depth << 12) | (Gid.x << 6) | (Gid.y);
 	c.lightCount = 0;
 	c.lightOffset = 0;
-	c.padding = 0;
+	c.padding = true;
 	if (first)
 		clusters[offset + clusterCounts[prevIndex] - 1] = c;
 		

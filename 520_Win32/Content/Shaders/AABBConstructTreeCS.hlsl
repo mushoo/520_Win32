@@ -13,6 +13,8 @@ RWStructuredBuffer<AABBNode> treeNodes : register(u0);
 cbuffer ConstantBuffer : register(b0)
 {
 	uint depth;
+	uint blocksize;
+	bool first;
 };
 
 AABBNode AABBMinMax(AABBNode a, AABBNode b)
@@ -35,22 +37,35 @@ void main(
 	uint3 GTid : SV_GroupThreadID
 	)
 {
-	uint indexLocal = GTid.x + GTid.y * 32;
-	uint indexTotal = indexLocal + Gid.x * 1024;
 	uint lane = GTid.x;
 	uint warpid = Gid.x * 32 + GTid.y;
-	uint addr = (uint)((1 << 5 * depth) - 1) / 31 + indexTotal;
+	warpid *= blocksize;
 
-	if (warpid >= 1 << 5 * (depth - 1)) return;
+	for (uint i = 0; i < blocksize; i++)
+	{
+		if (warpid >= 1 << 5 * depth) return;
 
-	temp[indexLocal] = treeNodes[addr];
+		uint rootAddr = ((1 << 5 * depth) - 1) / 31 + warpid;
+		uint childAddr = (rootAddr << 5) + 1 + GTid.x;
+		uint sharedIndex = GTid.x + GTid.y * 32;
 
-	if (lane >= 1) temp[indexLocal] = AABBMinMax(temp[indexLocal - 1], temp[indexLocal]);
-	if (lane >= 2) temp[indexLocal] = AABBMinMax(temp[indexLocal - 2], temp[indexLocal]);
-	if (lane >= 4) temp[indexLocal] = AABBMinMax(temp[indexLocal - 4], temp[indexLocal]);
-	if (lane >= 8) temp[indexLocal] = AABBMinMax(temp[indexLocal - 8], temp[indexLocal]);
-	if (lane >= 16) temp[indexLocal] = AABBMinMax(temp[indexLocal - 16], temp[indexLocal]);
+		temp[sharedIndex] = treeNodes[childAddr];
 
-	if (lane == 0)
-		treeNodes[addr >> 5] = temp[indexLocal + 31];
+		if (first)
+		{
+			temp[sharedIndex].active = true;
+			treeNodes[childAddr].active = true;
+		}
+
+		if (lane >= 1) temp[sharedIndex] = AABBMinMax(temp[sharedIndex - 1], temp[sharedIndex]);
+		if (lane >= 2) temp[sharedIndex] = AABBMinMax(temp[sharedIndex - 2], temp[sharedIndex]);
+		if (lane >= 4) temp[sharedIndex] = AABBMinMax(temp[sharedIndex - 4], temp[sharedIndex]);
+		if (lane >= 8) temp[sharedIndex] = AABBMinMax(temp[sharedIndex - 8], temp[sharedIndex]);
+		if (lane >= 16) temp[sharedIndex] = AABBMinMax(temp[sharedIndex - 16], temp[sharedIndex]);
+
+		if (lane == 31)
+			treeNodes[rootAddr] = temp[sharedIndex];
+
+		warpid++;
+	}
 }

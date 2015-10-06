@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Content\Renderer.h"
+#include "Content\Profiler.h"
 #include <memory>
 #include "DeviceResources.h"
 
@@ -15,6 +16,7 @@ namespace _520
 	HINSTANCE								g_hInst = nullptr;
 	HWND									g_hWnd = nullptr;
 	std::shared_ptr<DX::DeviceResources>	g_deviceResources = nullptr;
+	std::shared_ptr<Profiler>				g_profiler = nullptr;
 	std::unique_ptr<_520::Renderer>			g_renderer = nullptr;
 	DX::StepTimer							g_timer;
 

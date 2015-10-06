@@ -3,24 +3,26 @@
 #include "DirectXHelper.h"
 #include "DDSLoader\DDSTextureLoader.h"
 #include "DirectXTex\DirectXTex.h"
-#include "LightSystem.h"
 
 #include <algorithm>
+#include <tuple>
 #include <map>
 #include <set>
 #include <locale>
 #include <codecvt>
 #include <string>
+#include <vector>
 
 using namespace _520;
 
 using namespace DirectX;
 
 // Loads vertex and pixel shaders from files and instantiates the cube geometry.
-Renderer::Renderer(const std::shared_ptr<DX::DeviceResources>& deviceResources) :
+Renderer::Renderer(const std::shared_ptr<DX::DeviceResources> deviceResources, std::shared_ptr<Profiler> profiler) :
 	m_loadingComplete(false),
 	m_deviceResources(deviceResources),
-	m_camera(std::make_shared<Camera>())
+	m_camera(std::make_shared<Camera>()),
+	m_profiler(profiler)
 {
 	ID3D11RasterizerState *rs;
 	D3D11_RASTERIZER_DESC rsdesc;
@@ -215,16 +217,69 @@ void Renderer::Render()
 	}
 
 	ClearViews();
+
 	RenderGBuffers();
+	
 	RenderLightModels();
+	m_profiler->nextTime("Render Things");
+	
 	AssignClusters();
+	
 	SortClusters();
+	
 	CalcClusterNums();
+	m_profiler->nextTime("Assign Clusters");
+	
+	CalcLightBoundingBox();
+
+	CalcZCodes();
+	
+	SortLights();
+	m_profiler->nextTime("Sort Lights");
+
 	ConstructLightTree();
+	m_profiler->nextTime("Construct Light Tree");
+	
 	TraverseTree();
+	m_profiler->nextTime("Traverse Light Tree");
+
 	SumClusterLightCounts();
+
 	MakeLightList();
+	m_profiler->nextTime("Make Light Lists");
+
 	RenderFinal();
+	m_profiler->nextTime("Render Final Image");
+}
+
+std::shared_ptr<std::vector<_Lights::AABBNode>> Renderer::checkTree()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+	// Verify tree looks as it should.
+	ID3D11Buffer *tempBuffer;
+	CD3D11_BUFFER_DESC tempDesc;
+	tempDesc.ByteWidth = sizeof(_Lights::AABBNode) * _Lights::treeSize;
+	tempDesc.StructureByteStride = sizeof(_Lights::AABBNode);
+	tempDesc.BindFlags = 0;
+	tempDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	tempDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	tempDesc.Usage = D3D11_USAGE_STAGING;
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateBuffer(
+		&tempDesc,
+		nullptr,
+		&tempBuffer
+		)
+		);
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	ZeroMemory(&mappedResource, sizeof(D3D11_MAPPED_SUBRESOURCE));
+	context->CopyResource(tempBuffer, m_treeBuffer);
+	context->Map(tempBuffer, 0, D3D11_MAP_READ, 0, &mappedResource);
+	auto vec = std::make_shared<std::vector<_Lights::AABBNode>>(_Lights::treeSize);
+	memcpy(&(*vec)[0], mappedResource.pData, sizeof(_Lights::AABBNode) * _Lights::treeSize);
+	context->Unmap(tempBuffer, 0);
+	tempBuffer->Release();
+	return vec;
 }
 
 void Renderer::ClearViews() {
@@ -291,9 +346,6 @@ void Renderer::RenderFinal()
 		1,
 		m_pointSampler.GetAddressOf()
 		);
-
-	// Update the light list resource.
-	context->UpdateSubresource(m_lightListBuffer, 0, NULL, &_Lights::lights[0], 0, 0);
 
 	// Set the texture G-bufferinos for the final shading.
 	context->PSSetShaderResources(0, m_deviceResources->GBUFFNUM, &m_deviceResources->m_d3dGBufferResourceViews[0]);
@@ -404,6 +456,177 @@ void Renderer::CalcClusterNums()
 	context->CSSetUnorderedAccessViews(0, 3, nullUAV, 0);
 }
 
+void Renderer::CalcLightBoundingBox()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+
+	//_Lights::lightsPerFrame();
+	m_profiler->nextTime("Lights Per Frame (CPU mainly)");
+
+	context->CSSetShader(
+		m_prefixMinMaxLightPosCS.Get(),
+		nullptr,
+		0);
+
+	// Update the light list resource.
+	context->UpdateSubresource(m_lightListBuffer, 0, NULL, &_Lights::lights[0], 0, 0);
+
+	/*D3D11_BOX region;
+	region.left = (((1 << 5 * (_Lights::treeDepth - 1)) - 1) / 31) * sizeof(_Lights::AABBNode);
+	region.right = region.left + _Lights::shaderLights.size() * sizeof(_Lights::AABBNode);
+	region.front = region.top = 0;
+	region.back = region.bottom = 1;
+
+	context->UpdateSubresource(m_treeBuffer, 0, &region, &_Lights::shaderLights[0], 0, 0);*/
+	context->CSSetUnorderedAccessViews(0, 1, &m_lightTreeView, 0);
+	context->CSSetShaderResources(0, 1, &m_lightListResourceView);
+	context->CSSetConstantBuffers(0, 1, &m_lightTreeCBuffer);
+	context->CSSetConstantBuffers(1, 1, m_constantBuffer.GetAddressOf());
+	
+	UINT32 first = true;
+	for (int i = _Lights::treeDepth - 1; i > 0; i -= 2) {
+		int n = min(1 << 5 * i, _Lights::lights.size());
+		_Lights::ConstantBuffer buff = { i, first };
+		context->UpdateSubresource(m_lightTreeCBuffer, 0, nullptr, &buff, 0, 0);
+		context->Dispatch((n + 1023) / 1024, 1, 1);
+		first = false;
+	}
+
+	ID3D11Buffer *nullCBuffer[2] = { 0 };
+	ID3D11UnorderedAccessView *nullUAV[1] = { 0 };
+	context->CSSetConstantBuffers(0, 2, nullCBuffer);
+	context->CSSetUnorderedAccessViews(0, 1, nullUAV, 0);
+}
+
+void Renderer::CalcZCodes()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+
+	context->CSSetShader(
+		m_calcZCodesCS.Get(),
+		nullptr,
+		0);
+
+	context->CSSetUnorderedAccessViews(0, 1, &m_lightTreeView, 0);
+	context->CSSetConstantBuffers(0, 1, &m_lightTreeCBuffer);
+
+	int n = _Lights::lights.size();
+	_Lights::ConstantBuffer buff = { _Lights::treeDepth - 1 };
+	context->UpdateSubresource(m_lightTreeCBuffer, 0, nullptr, &buff, 0, 0);
+	context->Dispatch((n + 1023) / 1024, 1, 1);
+	
+	ID3D11Buffer *nullCBuffer[1] = { 0 };
+	ID3D11UnorderedAccessView *nullUAV[1] = { 0 };
+	context->CSSetConstantBuffers(0, 1, nullCBuffer);
+	context->CSSetUnorderedAccessViews(0, 1, nullUAV, 0);
+}
+
+void Renderer::SortLights()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+
+	ID3D11Buffer* cbs[] = { m_lightTreeCBuffer, m_sortParameters.Get() };
+	context->CSSetConstantBuffers(0, ARRAYSIZE(cbs), cbs);
+
+	UINT32 lightCount = _Lights::lights.size();
+	UINT32 treeOffset = ((1 << 5 * (_Lights::treeDepth - 1)) - 1) / 31;
+	_Lights::ConstantBuffer buff = { lightCount, treeOffset };
+	context->UpdateSubresource(m_lightTreeCBuffer, 0, nullptr, &buff, 0, 0);
+
+	context->CSSetUnorderedAccessViews(0, 1, &m_lightTreeView, nullptr);
+
+	bool bDone = SortLightsInitial(lightCount);
+	
+	int presorted = 512;
+	while (!bDone)
+	{
+		bDone = SortLightsIncremental(presorted, lightCount, treeOffset);
+		presorted *= 2;
+	}
+	
+	ID3D11Buffer *nullCBuffer[2] = { 0 };
+	ID3D11UnorderedAccessView *nullUAV[1] = { 0 };
+	context->CSSetConstantBuffers(0, ARRAYSIZE(nullCBuffer), nullCBuffer);
+	context->CSSetUnorderedAccessViews(0, 1, nullUAV, 0);
+}
+
+bool Renderer::SortLightsInitial(UINT32 maxSize)
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+
+	bool bDone = true;
+
+	// calculate how many threads we'll require:
+	//   we'll sort 512 elements per CU (threadgroupsize 256)
+	//     maybe need to optimize this or make it changeable during init
+	//     TGS=256 is a good intermediate value
+
+
+	unsigned int numThreadGroups = ((maxSize - 1) >> 9) + 1;
+
+	assert(numThreadGroups <= 1024);
+
+
+	if (numThreadGroups>1) bDone = false;
+
+	// sort all buffers of size 512 (and presort bigger ones)
+	context->CSSetShader(m_sort512CS.Get(), nullptr, 0);
+	context->Dispatch(numThreadGroups, 1, 1);
+
+	return bDone;
+}
+
+bool Renderer::SortLightsIncremental(UINT32 presorted, UINT32 maxSize, UINT32 treeOffset)
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+
+	bool bDone = true;
+	context->CSSetShader(m_sortStepCS.Get(), nullptr, 0);
+
+	// prepare thread group description data
+	unsigned int numThreadGroups = 0;
+
+	if (maxSize > presorted)
+	{
+		if (maxSize>presorted * 2)
+			bDone = false;
+
+		unsigned int pow2 = presorted;
+		while (pow2<maxSize)
+			pow2 *= 2;
+		numThreadGroups = pow2 >> 9;
+	}
+
+	unsigned int nMergeSize = presorted * 2;
+	for (unsigned int nMergeSubSize = nMergeSize >> 1; nMergeSubSize>256; nMergeSubSize = nMergeSubSize >> 1)
+	{
+		D3D11_MAPPED_SUBRESOURCE MappedResource;
+
+		context->Map(m_sortParameters.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
+		XMINT4* sc = (XMINT4*)MappedResource.pData;
+		sc->x = nMergeSubSize;
+		if (nMergeSubSize == nMergeSize >> 1)
+		{
+			sc->y = (2 * nMergeSubSize - 1);
+			sc->z = -1;
+		}
+		else
+		{
+			sc->y = nMergeSubSize;
+			sc->z = 1;
+		}
+		sc->w = 0;
+		context->Unmap(m_sortParameters.Get(), 0);
+
+		context->Dispatch(numThreadGroups, 1, 1);
+	}
+
+	context->CSSetShader(m_sortInner512CS.Get(), nullptr, 0);
+	context->Dispatch(numThreadGroups, 1, 1);
+
+	return bDone;
+}
+
 void Renderer::ConstructLightTree()
 {
 	auto context = m_deviceResources->GetD3DDeviceContext();
@@ -413,55 +636,24 @@ void Renderer::ConstructLightTree()
 		nullptr,
 		0);
 
-	//XMMATRIX viewMat = XMLoadFloat4x4(&m_constantBufferData.view);
-	_Lights::lightsPerFrame(m_camera->GetView());
-
-	D3D11_BOX region;
-	region.left = (((1 << 5 * (_Lights::treeDepth - 1)) - 1) / 31) * sizeof(_Lights::AABBNode);
-	region.right = region.left + _Lights::shaderLights.size() * sizeof(_Lights::AABBNode);
-	region.front = region.top = 0;
-	region.back = region.bottom = 1;
-
-	context->UpdateSubresource(m_treeBuffer, 0, &region, &_Lights::shaderLights[0], 0, 0);
 	context->CSSetUnorderedAccessViews(0, 1, &m_lightTreeView, 0);
 	context->CSSetConstantBuffers(0, 1, &m_lightTreeCBuffer);
 
-	for (int i = _Lights::treeDepth - 1; i > 0; i--) {
+#define BLOCKSIZE 4
+	UINT32 first = true;
+	for (int i = _Lights::treeDepth - 2; i > 0; i--) {
 		int n = 1 << 5 * i;
-		_Lights::ConstantBuffer buff = { i };
+		n = (n + BLOCKSIZE - 1) / BLOCKSIZE;
+		_Lights::ConstantBuffer buff = { i, BLOCKSIZE, first };
 		context->UpdateSubresource(m_lightTreeCBuffer, 0, nullptr, &buff, 0, 0);
-		context->Dispatch((n + 1023) / 1024, 1, 1);
+		context->Dispatch((n + 31) / 32, 1, 1);
+		first = false;
 	}
 
 	ID3D11Buffer *nullCBuffer[1] = { 0 };
 	ID3D11UnorderedAccessView *nullUAV[1] = { 0 };
 	context->CSSetConstantBuffers(0, 1, nullCBuffer);
 	context->CSSetUnorderedAccessViews(0, 1, nullUAV, 0);
-
-	// Verify tree looks as it should.
-	/*ID3D11Buffer *tempBuffer;
-	CD3D11_BUFFER_DESC tempDesc;
-	tempDesc.ByteWidth = sizeof(_Lights::AABBNode) * _Lights::treeSize;
-	tempDesc.StructureByteStride = sizeof(_Lights::AABBNode);
-	tempDesc.BindFlags = 0;
-	tempDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-	tempDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-	tempDesc.Usage = D3D11_USAGE_STAGING;
-	DX::ThrowIfFailed(
-		m_deviceResources->GetD3DDevice()->CreateBuffer(
-		&tempDesc,
-		nullptr,
-		&tempBuffer
-		)
-		);
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
-	ZeroMemory(&mappedResource, sizeof(D3D11_MAPPED_SUBRESOURCE));
-	context->CopyResource(tempBuffer, m_treeBuffer);
-	context->Map(tempBuffer, 0, D3D11_MAP_READ, 0, &mappedResource);
-	vector<_Lights::AABBNode> temp(_Lights::treeSize);
-	memcpy(&temp[0], mappedResource.pData, sizeof(_Lights::AABBNode) * _Lights::treeSize);
-	context->Unmap(tempBuffer, 0);
-	tempBuffer->Release();*/
 }
 
 void Renderer::TraverseTree()
@@ -469,7 +661,7 @@ void Renderer::TraverseTree()
 	auto context = m_deviceResources->GetD3DDeviceContext();
 
 	// Get the number of clusters.
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	/*D3D11_MAPPED_SUBRESOURCE mappedResource;
 	ZeroMemory(&mappedResource, sizeof(D3D11_MAPPED_SUBRESOURCE));
 	ID3D11Resource *temp;
 	m_deviceResources->m_clusterOffsetUAV->GetResource(&temp);
@@ -483,7 +675,7 @@ void Renderer::TraverseTree()
 	context->CopySubresourceRegion(m_tempCopyResource, 0, 0, 0, 0, temp, 0, &region);
 	context->Map(m_tempCopyResource, 0, D3D11_MAP_READ, 0, &mappedResource);
 	m_numClusters = *((UINT32 *)mappedResource.pData);
-	context->Unmap(m_tempCopyResource, 0);
+	context->Unmap(m_tempCopyResource, 0);*/
 
 	// Traverse the tree for each cluster.
 	context->CSSetShader(
@@ -498,7 +690,7 @@ void Renderer::TraverseTree()
 	float denominator = log(1 + 2 * tan(m_fovAngleY * 0.5) / ((float)height / 32.0f));
 	float invFocalLenX = tan(m_fovAngleY * 0.5) * (float)width / (float)height;
 	float invFocalLenY = tan(m_fovAngleY * 0.5);
-	_Lights::ConstantBuffer buff = { _Lights::treeDepth, m_numClusters, width, height,
+	_Lights::ConstantBuffer buff = { _Lights::treeDepth, width, height,
 		*(UINT32*)&denominator, *(UINT32*)&invFocalLenX, *(UINT32*)&invFocalLenY };
 
 	context->UpdateSubresource(m_lightTreeCBuffer, 0, nullptr, &buff, 0, 0);
@@ -509,7 +701,7 @@ void Renderer::TraverseTree()
 	UINT32 initialCount[1] = { 0 };
 	context->CSSetUnorderedAccessViews(1, 1, &m_pairListView, initialCount);
 
-	context->Dispatch((m_numClusters + 31) / 32, 1, 1);
+	context->Dispatch((MAXCLUSTERS + 31) / 32, 1, 1);
 	
 	ID3D11Buffer *nullCBuffer[1] = { 0 };
 	ID3D11ShaderResourceView *nullSRV[1] = { 0 };
@@ -532,10 +724,10 @@ void Renderer::SumClusterLightCounts()
 	context->CSSetUnorderedAccessViews(0, 1, &m_clusterView, 0);
 
 	_Lights::ConstantBuffer buff;
-	UINT32 numClusters = m_numClusters;
+	UINT32 numClusters = MAXCLUSTERS;
 	UINT32 stride = 1;
-	vector<UINT32> strides;
-	vector<UINT32> numClustersVec;
+	std::vector<UINT32> strides;
+	std::vector<UINT32> numClustersVec;
 
 	while (numClusters > 1)
 	{
@@ -857,7 +1049,7 @@ void Renderer::CreateLightResources()
 	lightTreeBufferDesc.CPUAccessFlags = 0;
 	lightTreeBufferDesc.Usage = D3D11_USAGE_DEFAULT;
 
-	vector<_Lights::AABBNode> initData(_Lights::treeSize, _Lights::AABBNode{ { 0, 0, 0 }, { 0, 0, 0 }, 0, 0 });
+	std::vector<_Lights::AABBNode> initData(_Lights::treeSize, _Lights::AABBNode{ { 0, 0, 0 }, { 0, 0, 0 }, 0, 0 });
 	D3D11_SUBRESOURCE_DATA data;
 	data.pSysMem = &initData[0];
 	data.SysMemPitch = 0;
@@ -1060,7 +1252,7 @@ void Renderer::CreateLightResources()
 		)
 		);
 
-	vector<LightInstance> lightInstances(_Lights::lights.size());
+	std::vector<LightInstance> lightInstances(_Lights::lights.size());
 	for (int i = 0; i < lightInstances.size(); i++)
 	{
 		lightInstances[i].pos = _Lights::lights[i].pos;
@@ -1239,6 +1431,56 @@ void Renderer::CreateDeviceDependentResources()
 		)
 		);
 
+	csData = DX::ReadFile("PrefixMinMaxLightPosCS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_prefixMinMaxLightPosCS
+		)
+		);
+
+	csData = DX::ReadFile("CalcZCodesCS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_calcZCodesCS
+		)
+		);
+
+	csData = DX::ReadFile("Sort512CS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_sort512CS
+		)
+		);
+
+	csData = DX::ReadFile("SortStepCS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_sortStepCS
+		)
+		);
+
+	csData = DX::ReadFile("SortInner512CS.cso");
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateComputeShader(
+		&csData[0],
+		csData.size(),
+		nullptr,
+		&m_sortInner512CS
+		)
+		);
+
 	csData = DX::ReadFile("TraverseTreeCS.cso");
 	DX::ThrowIfFailed(
 		m_deviceResources->GetD3DDevice()->CreateComputeShader(
@@ -1296,6 +1538,16 @@ void Renderer::CreateDeviceDependentResources()
 		nullptr,
 		&m_assignClustersCBuffer
 		)
+		);
+
+	D3D11_BUFFER_DESC cbDesc;
+	ZeroMemory(&cbDesc, sizeof(cbDesc));
+	cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+	cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	cbDesc.ByteWidth = sizeof(XMINT4);
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateBuffer(&cbDesc, nullptr, m_sortParameters.GetAddressOf())
 		);
 
 	LoadModels();

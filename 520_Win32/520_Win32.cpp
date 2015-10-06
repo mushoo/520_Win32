@@ -15,8 +15,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 	g_deviceResources = std::make_shared<DX::DeviceResources>();
 	g_deviceResources->SetWindow(g_hWnd);
-
-	g_renderer = std::make_unique<_520::Renderer>(g_deviceResources);
+	g_profiler = std::make_shared<Profiler>(g_deviceResources);
+	g_renderer = std::make_unique<_520::Renderer>(g_deviceResources, g_profiler);
 
 	// Main message loop
 	MSG msg = { 0 };
@@ -31,10 +31,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		{
 			Update();
 
+			g_profiler->beginFrame();
+
 			if (Render())
 			{
 				g_deviceResources->Present();
 			}
+
+			g_profiler->endFrame();
+			auto timings = g_profiler->getTimings();
 		}
 	}
 
@@ -135,20 +140,9 @@ bool _520::Render()
 	}
 
 	auto context = g_deviceResources->GetD3DDeviceContext();
-
-	// Reset the viewport to target the whole screen.
+	// Render the scene objects.
 	auto viewport = g_deviceResources->GetScreenViewport();
 	context->RSSetViewports(1, &viewport);
-
-	// Moved clearing to inside the Render function.
-	/*// Clear the back buffer and depth stencil view.
-	context->ClearRenderTargetView(g_deviceResources->GetBackBufferRenderTargetView(), DirectX::Colors::CornflowerBlue);
-	context->ClearDepthStencilView(g_deviceResources->GetDepthStencilView(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
-	for (ID3D11RenderTargetView *view : g_deviceResources->m_d3dGBufferTargetViews)
-	{
-		if (view != nullptr)
-			context->ClearRenderTargetView(view, DirectX::Colors::CornflowerBlue);
-	}*/
 
 	// Render the scene objects.
 	g_renderer->Render();

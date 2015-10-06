@@ -36,6 +36,9 @@
     <ClCompile Include="pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Content\LightSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DeviceResources.h">
@@ -80,6 +83,9 @@
     <ClInclude Include="Content\MortonKey\mortonkeys.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Content\Profiler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Content\Shaders\DeferredPS.hlsl" />
@@ -97,6 +103,11 @@
     <FxCompile Include="Content\Shaders\MakeLightListCS.hlsl" />
     <FxCompile Include="Content\Shaders\LightModelVS.hlsl" />
     <FxCompile Include="Content\Shaders\LightModelPS.hlsl" />
+    <FxCompile Include="Content\Shaders\PrefixMinMaxLightPosCS.hlsl" />
+    <FxCompile Include="Content\Shaders\CalcZCodesCS.hlsl" />
+    <FxCompile Include="Content\Shaders\BitonicSort\Sort512CS.hlsl" />
+    <FxCompile Include="Content\Shaders\BitonicSort\SortInner512CS.hlsl" />
+    <FxCompile Include="Content\Shaders\BitonicSort\SortStepCS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Content\DirectXTex\DirectXTex.inl">

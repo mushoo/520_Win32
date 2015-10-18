@@ -7,8 +7,8 @@ using namespace DirectX;
 
 namespace _Lights
 {
-#define NUM_LIGHTS 64
-#define RADIUS (0.1)
+#define NUM_LIGHTS 32
+#define RADIUS (0.14)
 
 	struct Light
 	{

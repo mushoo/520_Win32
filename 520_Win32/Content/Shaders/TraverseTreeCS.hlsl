@@ -73,27 +73,44 @@ bool checkAABBsphere(float3 center, float3 radius, float3 S, float R)
 	return distance < R;
 }
 
+void handleLeaves(AABBNode tempNode, uint clusterId, uint lane, uint warpid, float3 center, float3 radius)
+{
+	bool result = tempNode.active && checkAABBsphere(center, radius, tempNode.center, tempNode.radius.x);
+	lightCounts[warpid][lane] = result;
+
+	if (lane >= 1) lightCounts[warpid][lane] = lightCounts[warpid][lane - 1] + lightCounts[warpid][lane];
+	if (lane >= 2) lightCounts[warpid][lane] = lightCounts[warpid][lane - 2] + lightCounts[warpid][lane];
+	if (lane >= 4) lightCounts[warpid][lane] = lightCounts[warpid][lane - 4] + lightCounts[warpid][lane];
+	if (lane >= 8) lightCounts[warpid][lane] = lightCounts[warpid][lane - 8] + lightCounts[warpid][lane];
+	if (lane >= 16) lightCounts[warpid][lane] = lightCounts[warpid][lane - 16] + lightCounts[warpid][lane];
+
+	Pair pair;
+	pair.clusterIndex = clusterId;
+	pair.lightIndex = tempNode.index;
+	pair.lightOffset = totalCounts[warpid] + lightCounts[warpid][lane] - 1;
+	pair.valid = true;
+
+	if (result)
+		pairAppendBuffer.Append(pair);
+
+	if (lane == 31) totalCounts[warpid] += lightCounts[warpid][31];
+}
+
+
+uint parent(uint child) { return (child - 1) >> 5; }
+uint child(uint parent) { return (parent << 5) + 1;  }
+
 void depthFirst(uint clusterId, uint lane, uint warpid, float3 center, float3 radius)
 {
 	uint depth = 1;
 	uint address = 1;
 	uint pos[5] = { 0, 0, 0, 0, 0 };
-	Pair pair;
-	uint index;
-	bool result;
 	uint i;
 	AABBNode tempNode;
 
 	branch[warpid][depth][lane] = treeNodes[address + lane].active &&
 		checkAABBintersection(treeNodes[address + lane], center, radius);
-	
-	//if (lane == 4 && treeNodes[address + lane].active && checkAABBintersection(treeNodes[address + lane], center, radius))
-	//	clusters[clusterId].lightCount = true;
-	//return;
-	
-	//if (branch[warpid][depth][lane])
-	//	clusters[clusterId].lightCount = true;
-	//return;
+
 	while (depth > 0)
 	{
 		i = pos[depth];
@@ -101,41 +118,16 @@ void depthFirst(uint clusterId, uint lane, uint warpid, float3 center, float3 ra
 		{
 			if (branch[warpid][depth][i])
 			{
-				//clusters[clusterId].lightCount++;
-
-
-				tempNode = treeNodes[(address << 5) + 1 + lane];
+				tempNode = treeNodes[child(address) + lane];
 				if (depth == maxDepth - 2)
 				{
-					index = totalCounts[warpid];
-					result = tempNode.active && checkAABBsphere(center, radius, tempNode.center, tempNode.radius.x);
-						//checkAABBintersection(tempNode, center, radius);
-					//if (result)
-					//	clusters[clusterId].lightCount = true;
-					lightCounts[warpid][lane] = result;
-
-
-					if (lane >= 1) lightCounts[warpid][lane] = lightCounts[warpid][lane - 1] + lightCounts[warpid][lane];
-					if (lane >= 2) lightCounts[warpid][lane] = lightCounts[warpid][lane - 2] + lightCounts[warpid][lane];
-					if (lane >= 4) lightCounts[warpid][lane] = lightCounts[warpid][lane - 4] + lightCounts[warpid][lane];
-					if (lane >= 8) lightCounts[warpid][lane] = lightCounts[warpid][lane - 8] + lightCounts[warpid][lane];
-					if (lane >= 16) lightCounts[warpid][lane] = lightCounts[warpid][lane - 16] + lightCounts[warpid][lane];
-
-					pair.clusterIndex = clusterId;
-					pair.lightIndex = tempNode.index;
-					pair.lightOffset = totalCounts[warpid] + lightCounts[warpid][lane] - 1;
-					pair.valid = true;
-
-					if (result)
-						pairAppendBuffer.Append(pair);
-
-					if (lane == 31) totalCounts[warpid] += lightCounts[warpid][31];
+					handleLeaves(tempNode, clusterId, lane, warpid, center, radius);
 				}
 				else
 				{
 					pos[depth] = i + 1;
 					depth++;
-					address = (address << 5) + 1;
+					address = child(address);
 					branch[warpid][depth][lane] = tempNode.active &&
 						checkAABBintersection(tempNode, center, radius);
 					break;
@@ -147,7 +139,7 @@ void depthFirst(uint clusterId, uint lane, uint warpid, float3 center, float3 ra
 		{
 			pos[depth] = 0;
 			depth--;
-			address >>= 5;
+			address = parent(address);
 		}
 	}
 }

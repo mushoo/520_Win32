@@ -34,7 +34,7 @@ namespace _Lights
 			}
 		}
 
-		srand(static_cast <unsigned> (time(0)));
+		srand(static_cast <unsigned> (6));
 
 		for (Light &light : lights) {
 			light.r = RADIUS;

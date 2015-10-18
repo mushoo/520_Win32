@@ -13,7 +13,7 @@
 namespace _520
 {
 #define MAXCLUSTERS 100000
-#define MAXPAIRS 1000000
+#define MAXPAIRS 10000000
 
 	struct TriangleIndices
 	{
@@ -79,6 +79,8 @@ namespace _520
 
 	private:
 		std::shared_ptr<std::vector<_Lights::AABBNode>> checkTree();
+		std::shared_ptr<std::vector<Cluster>> checkClusters();
+		std::shared_ptr<std::vector<UINT32>> checkLightList();
 		// Cached pointer to device resources.
 		std::shared_ptr<DX::DeviceResources> m_deviceResources;
 		std::shared_ptr<Camera> m_camera = nullptr;

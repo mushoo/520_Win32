@@ -87,33 +87,30 @@ float4 main(PixelShaderInput input) : SV_TARGET
 		return float4(pow(color, 1.0 / 2.2), 1.0f);
 	}
 	case 1: {
-		uint clusterIndex = clusterAssignTexture[tex * uint2(width, height)];
-		uint lightCount = clusterList[clusterIndex].lightCount;
-		uint listOffset = clusterList[clusterIndex].lightOffset * (clusterIndex != 0);
-		float3 color = float3(0, 0, 0);
-		for (uint i = 0; i < lightCount; i++)
-		{
-			uint lightIndex = clusterLightList[listOffset];
-			Light light = lightList[lightIndex];
-			float dist = length(light.position - position.xyz);
-			if (dist < light.radius)
-				color += light.color * 0.5;
-			listOffset++;
-		}
+		float3 color = diffuseColor * 0.7;
 		return float4(pow(color, 1.0 / 2.2), 1.0f);
 	}
 	case 2: {
-		//uint clusterIndex = clusterAssignTexture[tex * uint2(width, height)];
-		//uint lightCount = clusterList[clusterIndex].lightCount;
-		//uint clusterNumZ = clusterList[clusterIndex].lightCount;
-		//float calculated = asfloat(clusterList[clusterIndex].lightCount);
-		//float actual = position.y;
-		//float color = 0.33 * lightCount * (!all(normal.xyz == 0.0));//abs(calculated - actual);// 
-		return lightModelColor;
+		uint clusterIndex = clusterAssignTexture[tex * uint2(width, height)];
+		uint clusterNum = clusterList[clusterIndex].clusterNum;
+		uint3 clusterCoord = uint3((clusterNum >> 6) & 0x3F, (clusterNum)& 0x3F, (clusterNum >> 12) & 0x3FF);
+		float3 color = diffuseColor * 0.7;
+		float diff = 0.075;
+		uint levels = 4;
+		uint cluster = clusterIndex;
+		color += (cluster % levels) * diff - diff * (levels - 1) / 2.0;
+		return float4(pow(color, 1.0 / 2.2), 1.0f);
 	}
 	default: {
 		uint clusterIndex = clusterAssignTexture[tex * uint2(width, height)];
-		return float4(((float)(clusterIndex % 4) / 4.0f).rrr, 1.0f);
+		uint clusterNum = clusterList[clusterIndex].clusterNum;
+		uint3 clusterCoord = uint3((clusterNum >> 6) & 0x3F, (clusterNum)& 0x3F, (clusterNum >> 12) & 0x3FF);
+		float3 color = diffuseColor * 0.7;
+		float diff = 0.15;
+		uint levels = 2;
+		uint cluster = clusterCoord.x + clusterCoord.y % levels;
+		color += (cluster % levels) * diff - diff * (levels - 1) / 2.0;
+		return float4(pow(color, 1.0 / 2.2), 1.0f);
 	}
 	}
 }

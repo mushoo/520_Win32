@@ -282,6 +282,68 @@ std::shared_ptr<std::vector<_Lights::AABBNode>> Renderer::checkTree()
 	return vec;
 }
 
+std::shared_ptr<std::vector<Cluster>> Renderer::checkClusters()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+	// Verify tree looks as it should.
+	ID3D11Buffer *tempBuffer;
+	CD3D11_BUFFER_DESC tempDesc;
+	tempDesc.ByteWidth = sizeof(Cluster) * MAXCLUSTERS;
+	tempDesc.StructureByteStride = sizeof(Cluster);
+	tempDesc.BindFlags = 0;
+	tempDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	tempDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	tempDesc.Usage = D3D11_USAGE_STAGING;
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateBuffer(
+		&tempDesc,
+		nullptr,
+		&tempBuffer
+		)
+		);
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	ZeroMemory(&mappedResource, sizeof(D3D11_MAPPED_SUBRESOURCE));
+	context->CopyResource(tempBuffer, m_clusterBuffer);
+	context->Map(tempBuffer, 0, D3D11_MAP_READ, 0, &mappedResource);
+	auto vec = std::make_shared<std::vector<Cluster>>(MAXCLUSTERS);
+	memcpy(&(*vec)[0], mappedResource.pData, sizeof(Cluster) * MAXCLUSTERS);
+	context->Unmap(tempBuffer, 0);
+	tempBuffer->Release();
+	return vec;
+}
+
+std::shared_ptr<std::vector<UINT32>> Renderer::checkLightList()
+{
+	auto context = m_deviceResources->GetD3DDeviceContext();
+	// Verify tree looks as it should.
+	ID3D11Buffer *tempBuffer;
+	CD3D11_BUFFER_DESC tempDesc;
+	tempDesc.ByteWidth = sizeof(UINT32) * MAXPAIRS;// Upper estimate on how many pairs there might be.
+	tempDesc.StructureByteStride = sizeof(UINT32);
+	tempDesc.BindFlags = 0;
+	tempDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	tempDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	tempDesc.Usage = D3D11_USAGE_STAGING;
+	DX::ThrowIfFailed(
+		m_deviceResources->GetD3DDevice()->CreateBuffer(
+		&tempDesc,
+		nullptr,
+		&tempBuffer
+		)
+		);
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	ZeroMemory(&mappedResource, sizeof(D3D11_MAPPED_SUBRESOURCE));
+	ID3D11Resource *tempRes;
+	m_clusterLightListsView->GetResource(&tempRes);
+	context->CopyResource(tempBuffer, tempRes);
+	context->Map(tempBuffer, 0, D3D11_MAP_READ, 0, &mappedResource);
+	auto vec = std::make_shared<std::vector<UINT32>>(MAXPAIRS);
+	memcpy(&(*vec)[0], mappedResource.pData, sizeof(UINT32) * MAXPAIRS);
+	context->Unmap(tempBuffer, 0);
+	tempBuffer->Release();
+	return vec;
+}
+
 void Renderer::ClearViews() {
 	auto context = m_deviceResources->GetD3DDeviceContext();
 	context->ClearRenderTargetView(m_deviceResources->GetBackBufferRenderTargetView(), DirectX::Colors::CornflowerBlue);
@@ -768,7 +830,7 @@ void Renderer::MakeLightList()
 	context->CSSetUnorderedAccessViews(1, 1, &m_clusterLightListsView, 0);
 	context->CSSetShaderResources(0, 1, &m_pairListResourceView);
 	
-	context->Dispatch(1024, 1, 1);
+	context->Dispatch((MAXPAIRS + 1023) / 1024, 1, 1);
 
 	ID3D11UnorderedAccessView *nullUAV[2] = { 0 };
 	ID3D11ShaderResourceView *nullSRV[1] = { 0 };
